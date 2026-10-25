@@ -1,0 +1,6 @@
+.venv/
+.env
+__pycache__/
+logs/
+voices/*.onnx
+voices/*.onnx.json
