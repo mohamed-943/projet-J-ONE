@@ -1,0 +1,10 @@
+sounddevice          # micro et haut-parleur
+numpy
+scipy                # rééchantillonnage audio
+silero-vad           # détection de parole
+faster-whisper       # transcription
+anthropic            # API Claude
+ollama               # client du LLM local
+piper-tts            # synthèse vocale
+pyyaml
+python-dotenv
