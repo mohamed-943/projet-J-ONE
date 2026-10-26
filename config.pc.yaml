@@ -1,0 +1,16 @@
+# Variante pour le développement sur PC (micro et haut-parleur de l'ordinateur,
+# Whisper sur CPU, LED affichée dans la console).
+# Lancement : python -m jone --config config.pc.yaml
+
+audio_input:
+  backend: sounddevice
+
+stt:
+  device: cpu
+  compute_type: int8
+
+audio_output:
+  backend: sounddevice
+
+led:
+  backend: console

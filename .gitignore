@@ -4,3 +4,6 @@ __pycache__/
 logs/
 voices/*.onnx
 voices/*.onnx.json
+*.part
+corpus/
+.pytest_cache/
