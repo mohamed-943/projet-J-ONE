@@ -1,0 +1,6 @@
+# Tests unitaires : pas besoin du matériel ni des modèles.
+numpy
+scipy
+pyyaml
+python-dotenv
+pytest

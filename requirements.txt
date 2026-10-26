@@ -1,10 +1,14 @@
-sounddevice          # micro et haut-parleur
+sounddevice          # micro et haut-parleur (PC de développement)
 numpy
 scipy                # rééchantillonnage audio
-silero-vad           # détection de parole
-faster-whisper       # transcription
-anthropic            # API Claude
-ollama               # client du LLM local
+silero-vad>=5.1      # détection de parole (installe torch)
+faster-whisper>=1.1  # transcription (large-v3-turbo)
+anthropic>=1.0       # API Claude
+ollama>=0.5          # client du LLM local (paramètre think)
 piper-tts            # synthèse vocale
 pyyaml
 python-dotenv
+
+# Sur le robot uniquement, SDK Unitree (PlayStream, LedControl) :
+#   git clone https://github.com/unitreerobotics/unitree_sdk2_python
+#   pip install -e unitree_sdk2_python

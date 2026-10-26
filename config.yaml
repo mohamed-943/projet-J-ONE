@@ -1,0 +1,94 @@
+# Configuration du pipeline vocal J-ONE.
+# Toute clé absente reprend sa valeur par défaut (jone/config.py).
+# Chemins relatifs = relatifs à la racine du projet.
+
+audio_input:
+  # g1_multicast : réseau de micros du G1 (sur la Jetson) ; sounddevice : micro du PC
+  backend: g1_multicast
+  sample_rate: 16000
+  frame_samples: 512            # 32 ms, taille d'analyse de Silero VAD
+  device: null                  # index/nom sounddevice (null = micro par défaut)
+  # À confirmer dans la doc développeur Unitree (voir README) :
+  g1_multicast_group: 239.168.123.161
+  g1_multicast_port: 5555
+  g1_local_ip: 192.168.123.164  # IP de la Jetson sur le réseau interne du robot
+
+vad:                            # EF-01
+  threshold: 0.5                # probabilité de parole qui déclenche l'enregistrement
+  neg_threshold: 0.35           # en dessous : silence (hystérésis)
+  min_speech_ms: 250            # plus court = bruit (porte, pas), ignoré
+  min_silence_ms: 600           # silence qui marque la fin de la phrase
+  pre_roll_ms: 300              # audio conservé avant le déclenchement
+  max_utterance_s: 15
+
+stt:                            # EF-02, ENF-02
+  model: large-v3-turbo
+  device: cuda
+  compute_type: int8_float16    # quantification : mémoire GPU réduite
+  beam_size: 1                  # 1 = le plus rapide ; 5 = un peu plus précis
+  language: fr
+
+filter:                         # EF-03
+  min_chars: 2
+  max_no_speech_prob: 0.6
+  min_avg_logprob: -1.0
+  max_compression_ratio: 2.4
+  blacklist: []                 # phrases parasites supplémentaires à rejeter
+
+wake_word:                      # question ouverte : mot d'éveil ou écoute continue
+  enabled: false
+  words: ["j-one", "j one", "jone", "djiwan", "ji wan", "gi one"]
+  session_timeout_s: 30         # après un échange, pas besoin de répéter le mot
+
+llm:
+  system_prompt_file: prompts/system_prompt_fr.txt   # EF-04
+  history_max_turns: 10         # EF-05 : échanges gardés en mémoire
+  max_sentences: 3              # EF-06 : coupure dure après 3 phrases
+  cloud:
+    enabled: true
+    model: claude-haiku-5-5
+    max_tokens: 300
+    effort: low
+    disable_thinking: true      # pas de réflexion : première phrase plus rapide
+    connect_timeout_s: 2.0
+    first_token_timeout_s: 3.0  # ENF-04 : seuil de bascule vers le LLM local
+    retry_cooldown_s: 30        # après un échec, le cloud est retenté au bout de 30 s
+  local:                        # EF-07, ENF-03
+    enabled: true
+    host: http://127.0.0.1:11434
+    model: qwen3:4b
+    max_tokens: 200
+    temperature: 0.7
+    keep_alive: 30m             # garde le modèle chargé en mémoire GPU
+    timeout_s: 20
+
+tts:                            # EF-08
+  voice_model: voices/fr_FR-siwis-medium.onnx
+  length_scale: 1.0             # > 1 : voix plus lente
+  use_cuda: false
+
+audio_output:                   # EF-09, EF-10
+  backend: g1                   # g1 (PlayStream) | sounddevice (PC) | none
+  volume: 80
+  app_name: jone
+  chunk_seconds: 1.0            # taille des blocs envoyés à PlayStream
+  lead_seconds: 0.5             # avance maximale d'envoi sur la lecture
+  tail_margin_s: 0.4            # attente après la fin du son avant de réécouter
+
+robot:
+  network_interface: eth0       # interface du réseau interne 192.168.123.x
+  sdk_timeout_s: 10
+
+led:                            # EF-11
+  backend: g1                   # g1 (LedControl) | console | none
+  colors:
+    idle:      [0, 0, 0]
+    listening: [0, 255, 0]      # vert
+    thinking:  [0, 0, 255]      # bleu
+    speaking:  [255, 255, 255]  # blanc
+    error:     [255, 0, 0]      # rouge
+  error_hold_s: 2.0
+
+logging:                        # EF-12
+  dir: logs
+  level: INFO
