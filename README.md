@@ -42,7 +42,10 @@ config.pc.yaml                 variante pour développer sur PC
 tools/                         scripts de test et de mesure (phases 1, 2, 3, 5)
 tests/                         tests unitaires (pytest)
 docs/plan_de_tests.md          procédure de validation
+docs/README_technique.md       fonctionnement interne, pour les développeurs
 ```
+
+Pour le fonctionnement interne (fils d'exécution, interfaces des modules, format du journal, extension), voir la [documentation technique](docs/README_technique.md).
 
 ## Installation sur la Jetson Orin du G1-EDU
 
