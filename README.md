@@ -99,6 +99,7 @@ Tous les réglages sont dans [config.yaml](config.yaml), commentés et rattaché
 | `stt.beam_size` | 1 = rapide ; 5 = un peu plus précis, plus lent |
 | `llm.cloud.first_token_timeout_s` | seuil de bascule vers le LLM local (ENF-04) |
 | `llm.cloud.retry_cooldown_s` | délai avant de retenter le cloud après une panne |
+| `llm.cloud.provider` | `claude` (par défaut) ; `groq` pour essayer sans clé Anthropic (`GROQ_API_KEY` dans `.env`, modèle dans `llm.cloud.groq`) |
 | `llm.history_max_turns` | nombre d'échanges gardés en mémoire |
 | `wake_word.enabled` | `true` : le robot ne répond que si on dit « J-ONE » |
 | `audio_output.tail_margin_s` | pause entre la fin du son et la reprise de l'écoute |

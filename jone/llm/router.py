@@ -98,11 +98,19 @@ class LLMRouter:
 def create_router(cfg: dict) -> LLMRouter:
     llm_cfg = cfg["llm"]
     cloud = local = None
-    if llm_cfg["cloud"]["enabled"]:
+    cloud_cfg = llm_cfg["cloud"]
+    if cloud_cfg["enabled"] and cloud_cfg.get("provider") == "groq":
+        from .groq import GroqBackend
+
+        if GroqBackend.credentials_available():
+            cloud = GroqBackend(**{**cloud_cfg, **cloud_cfg["groq"]})
+        else:
+            log.warning("GROQ_API_KEY absente : fonctionnement en LLM local uniquement")
+    elif cloud_cfg["enabled"]:
         from .claude import ClaudeBackend
 
         if ClaudeBackend.credentials_available():
-            cloud = ClaudeBackend(**llm_cfg["cloud"])
+            cloud = ClaudeBackend(**cloud_cfg)
         else:
             log.warning("ANTHROPIC_API_KEY absente : fonctionnement en LLM local uniquement")
     if llm_cfg["local"]["enabled"]:

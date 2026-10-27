@@ -58,6 +58,7 @@ DEFAULTS: dict[str, Any] = {
         "max_sentences": 3,
         "cloud": {
             "enabled": True,
+            "provider": "claude",  # claude | groq (essais sans clé Anthropic)
             "model": "claude-haiku-5-5",
             "max_tokens": 300,
             "effort": "low",
@@ -65,6 +66,10 @@ DEFAULTS: dict[str, Any] = {
             "connect_timeout_s": 2.0,
             "first_token_timeout_s": 3.0,
             "retry_cooldown_s": 30.0,
+            "groq": {
+                "model": "qwen/qwen3.8-27b",
+                "reasoning_effort": "none",
+            },
         },
         "local": {
             "enabled": True,

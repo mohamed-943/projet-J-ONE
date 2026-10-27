@@ -46,6 +46,7 @@ llm:
   max_sentences: 3              # EF-06 : coupure dure après 3 phrases
   cloud:
     enabled: true
+    provider: claude            # claude | groq (essais sans clé Anthropic, GROQ_API_KEY dans .env)
     model: claude-haiku-5-5
     max_tokens: 300
     effort: low
@@ -53,6 +54,9 @@ llm:
     connect_timeout_s: 2.0
     first_token_timeout_s: 3.0  # ENF-04 : seuil de bascule vers le LLM local
     retry_cooldown_s: 30        # après un échec, le cloud est retenté au bout de 30 s
+    groq:                       # utilisé seulement si provider: groq
+      model: qwen/qwen3.8-27b
+      reasoning_effort: none    # pas de réflexion : première phrase plus rapide
   local:                        # EF-07, ENF-03
     enabled: true
     host: http://127.0.0.1:11434

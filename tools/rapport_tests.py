@@ -20,7 +20,7 @@ import _bootstrap  # noqa: F401
 from _bootstrap import ROOT
 from jone.metrics import summarize
 
-TARGETS_MS = {"claude": 2500, "qwen3-local": 4000}  # ENF-01
+TARGETS_MS = {"claude": 2500, "groq": 2500, "qwen3-local": 4000}  # ENF-01
 
 
 def load(paths: list[str]) -> list[dict]:
