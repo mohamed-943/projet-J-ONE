@@ -1,6 +1,6 @@
 # J-ONE — interaction vocale homme-robot
 
-Pipeline vocal en français pour le robot humanoïde **J-ONE** (Unitree G1-EDU) : l'utilisateur parle, le robot comprend et répond à voix haute, sans clavier ni écran.
+Pipeline vocal en français et en anglais pour le robot humanoïde **J-ONE** (Unitree G1-EDU) : l'utilisateur parle, le robot comprend et répond à voix haute, sans clavier ni écran. La langue est détectée à chaque phrase et le robot répond dans la même langue, avec une voix française ou anglaise.
 
 ```
 micro G1 ─► Silero VAD ─► Whisper turbo ─► filtre ─► routeur LLM ─► Piper TTS ─► PlayStream() ─► haut-parleur
@@ -64,7 +64,7 @@ pip install -e unitree_sdk2_python
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen3:4b
 
-# Voix Piper
+# Voix Piper (française et anglaise)
 python tools/download_models.py
 
 # Clé API Anthropic
@@ -105,6 +105,20 @@ Tous les réglages sont dans [config.yaml](config.yaml), commentés et rattaché
 | `audio_output.tail_margin_s` | pause entre la fin du son et la reprise de l'écoute |
 
 La personnalité de J-ONE se modifie dans [prompts/system_prompt_fr.txt](prompts/system_prompt_fr.txt), sans toucher au code.
+
+**Réglages propres à une machine.** Créez un fichier `config.local.yaml` à la racine (il n'est pas versionné) : il s'applique par-dessus `config.yaml`. Les `git pull` ne sont ainsi jamais bloqués par des modifications locales. Exemple pour la Jetson, tant que Whisper n'est pas sur GPU :
+
+```yaml
+stt:
+  model: small
+  device: cpu
+  compute_type: int8
+llm:
+  cloud:
+    provider: groq
+```
+
+**Langues.** `stt.languages` liste les langues acceptées (par défaut `[fr, en]`). Pour revenir au français seul, mettez `stt.language: fr`. Chaque langue a sa voix Piper (`tts.voice_model` pour le français, `tts.voices` pour les autres). Si une voix manque, la voix française est utilisée, avec un avertissement dans le journal.
 
 ## Fonctionnement détaillé
 

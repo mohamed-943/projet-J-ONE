@@ -1,4 +1,5 @@
-"""Filtrage des transcriptions vides, parasites ou douteuses (EF-03).
+"""Filtrage des transcriptions vides, parasites ou douteuses (EF-03), en
+français et en anglais.
 
 Whisper « hallucine » des phrases typiques des sous-titres sur du bruit ou du
 silence ; on les rejette avant tout appel au LLM, comme les transcriptions à
@@ -28,10 +29,23 @@ DEFAULT_BLACKLIST = [
     "musique",
     "applaudissements",
     "rires",
+    # anglais
+    "thanks for watching",
+    "thank you for watching",
+    "thank you for watching this video",
+    "please subscribe",
+    "subtitles by the amara.org community",
+    "you",
+    "music",
+    "applause",
+    "laughter",
 ]
 # Phrases plausibles chez un vrai utilisateur, mais aussi hallucinations fréquentes
 # sur du bruit : rejetées seulement si la confiance est faible.
-SUSPICIOUS_SHORT = ["merci", "merci à tous", "merci beaucoup", "au revoir", "bonne journée"]
+SUSPICIOUS_SHORT = [
+    "merci", "merci à tous", "merci beaucoup", "au revoir", "bonne journée",
+    "thank you", "thanks", "thank you very much", "bye", "goodbye",
+]
 SUSPICIOUS_MAX_NO_SPEECH = 0.3
 SUSPICIOUS_MIN_LOGPROB = -0.6
 

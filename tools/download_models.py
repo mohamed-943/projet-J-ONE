@@ -1,9 +1,10 @@
-"""Télécharge la voix Piper fr_FR-siwis et rappelle les autres modèles à installer.
+"""Télécharge les voix Piper (français fr_FR-siwis, anglais en_US-lessac) et
+rappelle les autres modèles à installer.
 
-    python tools/download_models.py [--quality medium|low]
+    python tools/download_models.py [--quality medium|low] [--langs fr en]
 
-Whisper large-v3-turbo est téléchargé automatiquement par faster-whisper au
-premier lancement (cache Hugging Face). Le LLM local s'installe avec Ollama :
+Whisper est téléchargé automatiquement par faster-whisper au premier lancement
+(cache Hugging Face). Le LLM local s'installe avec Ollama :
     ollama pull qwen3:4b
 """
 
@@ -15,7 +16,11 @@ import urllib.request
 import _bootstrap  # noqa: F401
 from _bootstrap import ROOT
 
-BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/{q}/fr_FR-siwis-{q}.onnx"
+BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+VOICES = {  # langue : (dossier sur Hugging Face, nom de la voix)
+    "fr": ("fr/fr_FR/siwis", "fr_FR-siwis"),
+    "en": ("en/en_US/lessac", "en_US-lessac"),
+}
 
 
 def download(url: str, dest) -> None:
@@ -32,18 +37,21 @@ def download(url: str, dest) -> None:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--quality", default="medium", choices=["low", "medium"])
+    p.add_argument("--langs", nargs="+", default=list(VOICES), choices=list(VOICES))
     args = p.parse_args()
 
     voices = ROOT / "voices"
     voices.mkdir(exist_ok=True)
-    url = BASE.format(q=args.quality)
-    name = f"fr_FR-siwis-{args.quality}.onnx"
-    download(url, voices / name)
-    download(url + ".json", voices / (name + ".json"))
+    for lang in args.langs:
+        folder, voice = VOICES[lang]
+        name = f"{voice}-{args.quality}.onnx"
+        url = f"{BASE}/{folder}/{args.quality}/{name}"
+        download(url, voices / name)
+        download(url + ".json", voices / (name + ".json"))
 
     print("\nÀ faire aussi sur la Jetson :")
     print("  ollama pull qwen3:4b      # LLM de secours")
-    print("  (Whisper large-v3-turbo se télécharge seul au premier lancement)")
+    print("  (Whisper se télécharge seul au premier lancement)")
 
 
 if __name__ == "__main__":

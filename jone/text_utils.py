@@ -19,15 +19,29 @@ _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _SPACES = re.compile(r"\s+")
 
 _SYMBOL_WORDS = {
-    "%": " pour cent",
-    "&": " et ",
-    "+": " plus ",
-    "=": " égale ",
-    "€": " euros",
-    "$": " dollars",
-    "°C": " degrés",
-    "°": " degrés",
-    "/": " sur ",
+    "fr": {
+        "%": " pour cent",
+        "&": " et ",
+        "+": " plus ",
+        "=": " égale ",
+        "€": " euros",
+        "$": " dollars",
+        "°C": " degrés",
+        "°": " degrés",
+        "/": " sur ",
+    },
+    "en": {
+        "%": " percent",
+        "&": " and ",
+        "+": " plus ",
+        "=": " equals ",
+        "€": " euros",
+        "$": " dollars",
+        "°C": " degrees Celsius",
+        "°F": " degrees Fahrenheit",
+        "°": " degrees",
+        "/": " per ",
+    },
 }
 
 
@@ -37,12 +51,13 @@ def _is_emoji_or_symbol(ch: str) -> bool:
     return cat in ("So", "Cs", "Co") or ch in "‍️"
 
 
-def clean_for_speech(text: str) -> str:
+def clean_for_speech(text: str, language: str = "fr") -> str:
     text = _LINK.sub(r"\1", text)
     text = _URL.sub("", text)
     text = _BULLET.sub("", text)
     text = _MARKDOWN.sub("", text)
-    for sym, word in _SYMBOL_WORDS.items():  # avant le filtre : « ° » est un symbole
+    symbols = _SYMBOL_WORDS.get(language, _SYMBOL_WORDS["fr"])
+    for sym, word in symbols.items():  # avant le filtre : « ° » est un symbole
         text = text.replace(sym, word)
     text = "".join(ch for ch in text if not _is_emoji_or_symbol(ch))
     text = re.sub(r"[#*_<>|\\^{}\[\]]", " ", text)
@@ -53,8 +68,11 @@ def clean_for_speech(text: str) -> str:
 
 
 # Fin de phrase : ponctuation forte suivie d'un espace. On évite les abréviations
-# courantes (M., Mme., Dr., etc.) et les nombres décimaux (3.5 n'a pas d'espace).
-_SENTENCE_END = re.compile(r"(?<!\bM)(?<!\bDr)(?<!\bMme)(?<!\betc)([.!?…]+)[\"»)]?\s+")
+# courantes (M., Mme., Dr., Mr., Mrs., etc.) et les nombres décimaux (3.5 n'a pas
+# d'espace).
+_SENTENCE_END = re.compile(
+    r"(?<!\bM)(?<!\bDr)(?<!\bMme)(?<!\betc)(?<!\bMr)(?<!\bMrs)(?<!\bMs)([.!?…]+)[\"»)]?\s+"
+)
 
 
 class SentenceSplitter:

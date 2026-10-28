@@ -1,7 +1,9 @@
-"""Synthèse vocale française avec Piper, voix fr_FR-siwis (EF-08).
+"""Synthèse vocale avec Piper (EF-08) : voix fr_FR-siwis pour le français,
+en_US-lessac pour l'anglais. `MultiVoiceTTS` choisit la voix selon la langue
+détectée chez l'interlocuteur.
 
-Sortie toujours convertie en PCM 16 kHz mono 16 bits (EF-09) : la voix siwis
-« medium » est en 22,05 kHz, d'où le rééchantillonnage.
+Sortie toujours convertie en PCM 16 kHz mono 16 bits (EF-09) : les voix « medium »
+sont en 22,05 kHz, d'où le rééchantillonnage.
 Compatible avec l'API de piper-tts >= 1.3 (`synthesize` → AudioChunk) et avec
 l'ancienne (`synthesize_stream_raw`).
 """
@@ -54,3 +56,33 @@ class PiperTTS:
         """Texte → octets PCM 16 kHz mono 16 bits."""
         raw = self._raw_int16(text)
         return to_pcm16k_mono(np.frombuffer(raw, dtype=np.int16), self.sample_rate)
+
+
+class MultiVoiceTTS:
+    """Une voix Piper par langue ; repli sur la voix par défaut si la langue n'a
+    pas de voix installée."""
+
+    def __init__(self, voices: dict[str, PiperTTS], default: str = "fr"):
+        if default not in voices:
+            raise ValueError(f"aucune voix pour la langue par défaut « {default} »")
+        self.voices = voices
+        self.default = default
+
+    @classmethod
+    def from_config(cls, cfg: dict) -> "MultiVoiceTTS":
+        from .config import resolve_path
+
+        t = cfg["tts"]
+        default = t.get("default_language", "fr")
+        voices = {default: PiperTTS(resolve_path(t["voice_model"]), t["length_scale"], t["use_cuda"])}
+        for language, path in (t.get("voices") or {}).items():
+            if language == default:
+                continue
+            try:
+                voices[language] = PiperTTS(resolve_path(path), t["length_scale"], t["use_cuda"])
+            except FileNotFoundError as exc:
+                log.warning("%s Les réponses en « %s » utiliseront la voix « %s ».", exc, language, default)
+        return cls(voices, default)
+
+    def synthesize(self, text: str, language: str | None = None) -> bytes:
+        return self.voices.get(language or self.default, self.voices[self.default]).synthesize(text)

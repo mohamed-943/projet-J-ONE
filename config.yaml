@@ -26,7 +26,8 @@ stt:                            # EF-02, ENF-02
   device: cuda
   compute_type: int8_float16    # quantification : mémoire GPU réduite
   beam_size: 1                  # 1 = le plus rapide ; 5 = un peu plus précis
-  language: fr
+  language: null                # null : détection automatique parmi `languages`
+  languages: [fr, en]           # réponse dans la langue de l'interlocuteur
 
 filter:                         # EF-03
   min_chars: 2
@@ -37,7 +38,7 @@ filter:                         # EF-03
 
 wake_word:                      # question ouverte : mot d'éveil ou écoute continue
   enabled: false
-  words: ["j-one", "j one", "jone", "djiwan", "ji wan", "gi one"]
+  words: ["ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"]
   session_timeout_s: 30         # après un échange, pas besoin de répéter le mot
 
 llm:
@@ -67,7 +68,10 @@ llm:
     timeout_s: 20
 
 tts:                            # EF-08
-  voice_model: voices/fr_FR-siwis-medium.onnx
+  voice_model: voices/fr_FR-siwis-medium.onnx   # voix de la langue par défaut
+  default_language: fr
+  voices:                       # une voix par langue supplémentaire
+    en: voices/en_US-lessac-medium.onnx
   length_scale: 1.0             # > 1 : voix plus lente
   use_cuda: false
 

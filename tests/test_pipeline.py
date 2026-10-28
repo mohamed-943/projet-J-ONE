@@ -30,9 +30,11 @@ class FakeBackend:
 class FakeTTS:
     def __init__(self):
         self.spoken = []
+        self.languages = []
 
-    def synthesize(self, text):
+    def synthesize(self, text, language=None):
         self.spoken.append(text)
+        self.languages.append(language)
         return b"\x00\x00" * 160  # 10 ms
 
 
@@ -169,3 +171,33 @@ def test_report_from_logs():
     assert "| claude | 3 |" in text
     assert "Taux de bascule : 0/3" in text
     assert longest_ok_streak(log.records) == 3
+
+
+def test_english_utterance_gets_english_voice_and_log():
+    cloud = FakeBackend("groq", "Hello! I am Ultron.")
+    p, _, log, tts = make_pipeline(
+        cloud=cloud, mic=FakeMic(), text_filter=TranscriptFilter(),
+        stt=FakeSTT(Transcription("Hello, who are you?", avg_logprob=-0.1, language="en")),
+    )
+    p.handle_utterance(np.zeros(16000, dtype=np.int16), detected_at=0.0)
+    assert tts.spoken == ["Hello!", "I am Ultron."]
+    assert tts.languages == ["en", "en"]
+    assert log.records[-1]["langue"] == "en"
+
+
+def test_fallback_messages_follow_language():
+    from jone.pipeline import EMPTY_REPLIES, NO_LLM_REPLIES
+
+    p, _, _, tts = make_pipeline(local=FakeBackend("qwen3-local", fail=True))
+    p.respond("Hello?", language="en")
+    assert tts.spoken == [NO_LLM_REPLIES["en"]]
+    p2, _, _, tts2 = make_pipeline(cloud=FakeBackend("claude", "😀"))
+    p2.respond("?", language="en")
+    assert tts2.spoken == [EMPTY_REPLIES["en"]]
+
+
+def test_english_hallucinations_filtered():
+    f = TranscriptFilter()
+    assert not f.check(Transcription("Thanks for watching!")).accepted
+    assert not f.check(Transcription("Thank you.", avg_logprob=-0.9, no_speech_prob=0.5)).accepted
+    assert f.check(Transcription("Thank you!", avg_logprob=-0.2, no_speech_prob=0.05)).accepted

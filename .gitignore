@@ -7,3 +7,4 @@ voices/*.onnx.json
 *.part
 corpus/
 .pytest_cache/
+config.local.yaml

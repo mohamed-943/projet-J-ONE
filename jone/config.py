@@ -1,7 +1,8 @@
 """Chargement de la configuration (config.yaml + variables d'environnement .env).
 
 Toutes les valeurs par défaut sont définies ici ; config.yaml ne surcharge que ce
-qu'il précise. Ainsi une clé oubliée dans le fichier ne fait jamais planter le
+qu'il précise, puis config.local.yaml (s'il existe, non versionné) surcharge le
+tout pour la machine courante. Ainsi une clé oubliée dans le fichier ne fait jamais planter le
 pipeline (ENF-08).
 """
 
@@ -38,7 +39,8 @@ DEFAULTS: dict[str, Any] = {
         "device": "cuda",
         "compute_type": "int8_float16",
         "beam_size": 1,
-        "language": "fr",
+        "language": None,  # None : détection automatique parmi `languages`
+        "languages": ["fr", "en"],
     },
     "filter": {
         "min_chars": 2,
@@ -49,7 +51,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "wake_word": {
         "enabled": False,
-        "words": ["j-one", "j one", "jone", "djiwan", "ji wan", "gi one"],
+        "words": ["ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"],
         "session_timeout_s": 30.0,
     },
     "llm": {
@@ -82,7 +84,9 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "tts": {
-        "voice_model": "voices/fr_FR-siwis-medium.onnx",
+        "voice_model": "voices/fr_FR-siwis-medium.onnx",  # voix de la langue par défaut
+        "default_language": "fr",
+        "voices": {"en": "voices/en_US-lessac-medium.onnx"},
         "length_scale": 1.0,
         "use_cuda": False,
     },
@@ -140,11 +144,13 @@ def load_config(path: str | os.PathLike | None = None) -> dict[str, Any]:
     except ImportError:
         pass
 
-    config_path = resolve_path(path or "config.yaml")
-    user_cfg: dict = {}
-    if config_path.exists():
-        import yaml
+    cfg = DEFAULTS
+    # config.local.yaml (non versionné) : réglages propres à une machine, par
+    # exemple Whisper sur CPU sur la Jetson, appliqués par-dessus le fichier choisi.
+    for config_path in (resolve_path(path or "config.yaml"), PROJECT_ROOT / "config.local.yaml"):
+        if config_path.exists():
+            import yaml
 
-        with open(config_path, encoding="utf-8") as f:
-            user_cfg = yaml.safe_load(f) or {}
-    return _deep_merge(DEFAULTS, user_cfg)
+            with open(config_path, encoding="utf-8") as f:
+                cfg = _deep_merge(cfg, yaml.safe_load(f) or {})
+    return cfg

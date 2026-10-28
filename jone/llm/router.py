@@ -18,7 +18,11 @@ from .base import LLMBackend, LLMError, LLMRefusal
 
 log = logging.getLogger(__name__)
 
-REFUSAL_REPLY = "Je préfère ne pas répondre à cette question. Parlons d'autre chose ?"
+REFUSAL_REPLIES = {
+    "fr": "Je préfère ne pas répondre à cette question. Parlons d'autre chose ?",
+    "en": "I'd rather not answer that. Shall we talk about something else?",
+}
+REFUSAL_REPLY = REFUSAL_REPLIES["fr"]
 
 
 class NoBackendAvailable(LLMError):
@@ -56,7 +60,8 @@ class LLMRouter:
             order.append(self.local)
         return order
 
-    def stream(self, system: str, messages: list[dict[str, str]], info: RouteInfo) -> Iterator[str]:
+    def stream(self, system: str, messages: list[dict[str, str]], info: RouteInfo,
+               language: str = "fr") -> Iterator[str]:
         candidates = self._candidates()
         if not candidates:
             raise NoBackendAvailable("aucun LLM configuré")
@@ -78,7 +83,7 @@ class LLMRouter:
                 log.warning("%s : %s", backend.name, exc)
                 if not produced:
                     info.backend = backend.name
-                    yield REFUSAL_REPLY
+                    yield REFUSAL_REPLIES.get(language, REFUSAL_REPLY)
                 return
             except LLMError as exc:
                 info.errors.append(f"{backend.name}: {exc}")

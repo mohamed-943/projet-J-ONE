@@ -20,6 +20,8 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(prog="jone", description="Interaction vocale du robot J-ONE")
     p.add_argument("--config", default="config.yaml", help="fichier de configuration")
     p.add_argument("--text", action="store_true", help="mode texte (clavier au lieu du micro)")
+    p.add_argument("--lang", default="fr", choices=["fr", "en"],
+                   help="mode texte : langue de la voix (en vocal, elle est détectée)")
     p.add_argument("--no-cloud", action="store_true", help="forcer le LLM local (test ENF-03)")
     p.add_argument("--no-local", action="store_true", help="désactiver le LLM de secours")
     p.add_argument("--output", choices=["g1", "sounddevice", "none"],
@@ -37,7 +39,7 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
     from .led import create_led
     from .llm.router import create_router
     from .pipeline import VoicePipeline
-    from .tts import PiperTTS
+    from .tts import MultiVoiceTTS
 
     llm_cfg = cfg["llm"]
     router = create_router(cfg)
@@ -64,7 +66,7 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
         router=router,
         conversation=Conversation(llm_cfg["history_max_turns"]),
         system_prompt=load_system_prompt(resolve_path(llm_cfg["system_prompt_file"])),
-        tts=PiperTTS.from_config(cfg),
+        tts=MultiVoiceTTS.from_config(cfg),
         speaker=create_speaker(cfg),
         led=create_led(cfg),
         exchange_log=ExchangeLogger(resolve_path(cfg["logging"]["dir"])),
@@ -75,7 +77,7 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
     )
 
 
-def run_text_mode(pipeline) -> None:
+def run_text_mode(pipeline, language: str = "fr") -> None:
     from .led import State
 
     print("Mode texte : tapez votre phrase (« /reset » pour effacer la mémoire, Ctrl+C pour quitter).")
@@ -92,7 +94,7 @@ def run_text_mode(pipeline) -> None:
             print("(mémoire effacée)")
             continue
         try:
-            reply = pipeline.respond(line)
+            reply = pipeline.respond(line, language=language)
             print(f"J-ONE > {reply}")
         except Exception:
             log.exception("Erreur pendant la réponse")
@@ -125,7 +127,7 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, shutdown)
     try:
         if args.text:
-            run_text_mode(pipeline)
+            run_text_mode(pipeline, args.lang)
         else:
             pipeline.run()
     except KeyboardInterrupt:

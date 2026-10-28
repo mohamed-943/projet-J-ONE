@@ -65,3 +65,65 @@ def test_sdk_return_codes_as_seen_on_g1():
 
     assert sdk_ok(0) and sdk_ok(None) and sdk_ok((0, "")) and sdk_ok((0, {"volume": 100}))
     assert not sdk_ok(3104) and not sdk_ok((3104, ""))
+
+
+def test_clean_for_speech_english_symbols():
+    from jone.text_utils import clean_for_speech
+
+    assert clean_for_speech("It's 20°C and 50% humid", "en") == "It's 20 degrees Celsius and 50 percent humid"
+
+
+def test_splitter_keeps_english_titles():
+    from jone.text_utils import SentenceSplitter
+
+    s = SentenceSplitter()
+    assert s.feed("Ask Mr. Smith now. Ok") == ["Ask Mr. Smith now."]
+
+
+def test_multivoice_falls_back_to_default_voice():
+    from jone.tts import MultiVoiceTTS
+
+    class Voice:
+        def __init__(self, tag):
+            self.tag = tag
+
+        def synthesize(self, text):
+            return self.tag
+
+    tts = MultiVoiceTTS({"fr": Voice(b"fr"), "en": Voice(b"en")}, default="fr")
+    assert tts.synthesize("x", language="en") == b"en"
+    assert tts.synthesize("x", language="es") == b"fr"
+    assert tts.synthesize("x") == b"fr"
+
+
+def test_whisper_language_restricted_to_allowed(monkeypatch):
+    import types
+
+    from jone.stt import WhisperSTT
+
+    calls = []
+
+    class FakeModel:
+        def transcribe(self, samples, language=None, **kw):
+            calls.append(language)
+            seg = types.SimpleNamespace(text=" Hola", avg_logprob=-0.2, no_speech_prob=0.1,
+                                        compression_ratio=1.0)
+            info = types.SimpleNamespace(language=language or "es", language_probability=0.6,
+                                         all_language_probs=[("es", 0.6), ("en", 0.3), ("fr", 0.1)])
+            return iter([seg]), info
+
+    stt = WhisperSTT.__new__(WhisperSTT)
+    stt.model, stt.beam_size, stt.language, stt.languages = FakeModel(), 1, None, ["fr", "en"]
+    tr = stt.transcribe(np.zeros(1600, dtype=np.int16))
+    assert calls == [None, "en"] and tr.language == "en"
+
+
+def test_local_config_overrides(tmp_path, monkeypatch):
+    import jone.config as config
+
+    (tmp_path / "config.yaml").write_text("stt:\n  model: large-v3-turbo\n", encoding="utf-8")
+    (tmp_path / "config.local.yaml").write_text("stt:\n  device: cpu\n", encoding="utf-8")
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+    cfg = config.load_config(tmp_path / "config.yaml")
+    assert cfg["stt"]["model"] == "large-v3-turbo" and cfg["stt"]["device"] == "cpu"
+    assert cfg["stt"]["languages"] == ["fr", "en"]
