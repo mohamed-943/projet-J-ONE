@@ -58,3 +58,10 @@ def test_pc_config_overrides_only_what_it_sets():
     cfg = load_config("config.pc.yaml")
     assert cfg["audio_output"]["backend"] == "sounddevice"
     assert cfg["llm"]["local"]["model"] == "qwen3:4b"
+
+
+def test_sdk_return_codes_as_seen_on_g1():
+    from jone.robot import sdk_ok
+
+    assert sdk_ok(0) and sdk_ok(None) and sdk_ok((0, "")) and sdk_ok((0, {"volume": 100}))
+    assert not sdk_ok(3104) and not sdk_ok((3104, ""))

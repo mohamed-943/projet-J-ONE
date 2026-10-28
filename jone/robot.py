@@ -17,6 +17,12 @@ _lock = threading.Lock()
 _client = None
 
 
+def sdk_ok(ret) -> bool:
+    """Les appels du SDK renvoient 0, None ou un couple (code, données) : (0, '')."""
+    code = ret[0] if isinstance(ret, tuple) and ret else ret
+    return code in (None, 0)
+
+
 def get_audio_client(robot_cfg: dict):
     global _client
     with _lock:

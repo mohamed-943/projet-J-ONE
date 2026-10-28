@@ -15,6 +15,7 @@ import threading
 import time
 
 from .audio_utils import TARGET_RATE, pcm_bytes_to_int16, pcm_duration_s
+from .robot import sdk_ok
 
 log = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class G1Speaker(Speaker):
             if self._play_end < now:  # le haut-parleur s'était tu : nouveau départ
                 self._play_end = now
             ret = self.client.PlayStream(self.app_name, self._stream_id or "jone", chunk)
-            if ret not in (None, 0):
+            if not sdk_ok(ret):
                 log.warning("PlayStream a renvoyé le code %s", ret)
             self._mark_first_audio()
             self._play_end += pcm_duration_s(chunk)

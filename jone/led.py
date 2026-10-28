@@ -8,6 +8,8 @@ from __future__ import annotations
 import enum
 import logging
 
+from .robot import sdk_ok
+
 log = logging.getLogger(__name__)
 
 
@@ -62,7 +64,7 @@ class G1Led(Led):
 
     def _apply(self, state, r, g, b):
         code = self.client.LedControl(r, g, b)
-        if code not in (None, 0):
+        if not sdk_ok(code):
             log.warning("LedControl a renvoyé le code %s", code)
 
 
