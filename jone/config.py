@@ -51,7 +51,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "wake_word": {
         "enabled": False,
-        "words": ["ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"],
+        "words": ["sarah", "sara", "ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"],
         "session_timeout_s": 30.0,
     },
     "llm": {

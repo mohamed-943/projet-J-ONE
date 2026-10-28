@@ -38,7 +38,7 @@ filter:                         # EF-03
 
 wake_word:                      # question ouverte : mot d'éveil ou écoute continue
   enabled: false
-  words: ["ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"]
+  words: ["sarah", "sara", "ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"]
   session_timeout_s: 30         # après un échange, pas besoin de répéter le mot
 
 llm:
