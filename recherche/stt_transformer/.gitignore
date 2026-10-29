@@ -3,3 +3,6 @@ data/
 
 # Environnement virtuel uv
 .venv/
+
+# Résultats d'exécution locaux (contiennent de vraies phrases Common Voice)
+resultats_*.ipynb

@@ -622,3 +622,208 @@ class TransformerBlock(nn.Module):
         log_probs = logits.log_softmax(dim=-1)                         # (B, T', 50)
         return log_probs, lengths
 ```
+
+---
+
+## 19. Suivre un entraînement : époque, learning rate et métriques
+
+**Explication du vocabulaire.**
+- **Itération (*step*) :** un batch traité, c'est-à-dire forward, loss, backpropagation et mise à jour des poids.
+- **Époque (*epoch*) :** **un passage complet** sur toutes les données d'entraînement. Avec 12 982 clips et des batchs de 16, une époque compte ≈ 812 itérations. On entraîne en général pendant plusieurs dizaines d'époques.
+- **Learning rate (taux d'apprentissage) :** la **taille du pas** que fait l'optimizer à chaque mise à jour, dans la direction indiquée par le gradient. *Analogie :* descendre une montagne dans le brouillard. Le gradient indique la pente, et le learning rate la longueur de chaque pas.
+  - **Trop grand :** on saute par-dessus la vallée. La loss oscille, explose, ou devient `nan`.
+  - **Trop petit :** on avance à pas de fourmi. La loss baisse très lentement, et le quota de GPU s'épuise.
+  - **En pratique :** on commence par un *warmup* (le learning rate monte doucement pendant les premières itérations, pour éviter les gros sauts au départ), puis on le fait **décroître** progressivement.
+
+**Les métriques suivies, et comment les améliorer.**
+
+| Métrique | À quoi elle sert | Valeur normale | Comment l'améliorer |
+|---|---|---|---|
+| **Loss train** (CTC) | Mesure ce que le modèle apprend sur les données d'entraînement. Elle guide l'optimizer. | Elle doit **baisser** régulièrement | Si elle stagne : ajuster le learning rate, vérifier le code (test d'overfitting), ou agrandir le modèle |
+| **Loss dev** (CTC) | Mesure la même erreur sur des locuteurs **jamais vus**. Elle sert à détecter l'overfitting. | Elle doit baisser avec la loss train, en restant un peu au-dessus | Si elle remonte alors que la loss train baisse : plus de dropout, plus de données, augmentation de données, ou *early stopping* |
+| **WER** (*Word Error Rate*) | **La métrique de référence de l'industrie** en STT. Elle compte les erreurs **par mot** : (substitutions + suppressions + insertions) / nombre de mots de la référence. | Plus elle est basse, mieux c'est. Whisper fait souvent < 10 % en français propre. Un modèle entraîné de zéro sur 19 h sera **beaucoup plus haut**. | Plus de données, un modèle plus grand, un **modèle de langue** au décodage, un meilleur décodage (*beam search*) |
+| **CER** (*Character Error Rate*) | Même calcul que le WER, mais **par caractère**. Elle est plus fine : « marronier » au lieu de « marronnier » est une erreur entière en WER, mais une seule lettre en CER. | Toujours **plus basse** que le WER | Mêmes leviers que le WER |
+| **RTF** (*Real-Time Factor*) | Le temps de calcul divisé par la durée de l'audio. **Indispensable pour le robot.** | RTF < 1 signifie plus rapide que le temps réel. Sur le robot, on vise ≪ 1. | Un modèle plus petit, un sous-échantillonnage plus fort, la quantification, un GPU |
+| **Learning rate** | Indique où on en est dans le calendrier (warmup, puis décroissance) | Il suit la courbe prévue | Il se règle avant l'entraînement : c'est un hyperparamètre |
+| **Norme du gradient** | La taille des gradients. Un pic signale une instabilité. | Elle reste stable | *Gradient clipping* : on plafonne la norme, par exemple à 1 |
+
+**Lire les courbes : normal ou pas.**
+
+| Observation | Diagnostic | Normal ? |
+|---|---|---|
+| Les losses train et dev baissent ensemble | Le modèle apprend et généralise | ✅ |
+| La loss train baisse, la loss dev baisse puis **remonte** | **Overfitting** : le modèle mémorise | ⚠️ On garde la meilleure époque sur le dev (*early stopping*) |
+| La loss train ne baisse presque pas | Le modèle n'apprend pas : learning rate, bug ou capacité | ❌ |
+| `nan`, `inf` ou sauts énormes | Instabilité : learning rate trop grand, contrainte du CTC non respectée | ❌ On arrête et on corrige |
+| Le modèle ne produit que des blanks au début | Phase normale du CTC | ✅ Au début seulement, ❌ si ça dure |
+| La loss dev est très au-dessus de la loss train dès le départ | Écart de domaine (autres locuteurs, autres accents) | ⚠️ À analyser |
+
+**Cas particulier : le test d'overfitting sur 10 clips.** Là, on **veut** que le modèle mémorise. La loss train doit tendre vers 0, et les 10 phrases doivent être recopiées parfaitement. S'il n'y arrive pas, il y a un bug.
+
+**Où on l'applique.** Dans le notebook d'entraînement sur Kaggle (à venir).
+
+**Pourquoi.** Sans ces métriques, impossible de savoir si le modèle apprend, s'il mémorise ou s'il est inutilisable. Le **WER** et le **RTF** sont aussi les deux chiffres qui permettront de **comparer notre modèle à Whisper** dans le rapport.
+
+---
+
+## 20. Le décodage glouton du CTC (*greedy decoding*)
+
+**Explication.** Le modèle ne sort pas une phrase. Il sort, à **chaque instant**, une probabilité pour chacun des 50 symboles. Pour obtenir du texte, on applique les règles du CTC :
+1. **argmax :** à chaque instant, on garde le symbole le plus probable ;
+2. **fusion des répétitions :** plusieurs symboles identiques **à la suite** n'en font qu'un ;
+3. **suppression des blanks.**
+
+Exemple : `_ a a _ a b _ _` → (fusion) `_ a _ a b _` → (sans blanks) « aab ». Le blank placé entre les deux « a » permet de garder une **vraie double lettre** : c'est pour cela que le CTC a besoin du blank.
+
+On parle de décodage « glouton » parce qu'on choisit le meilleur symbole instant par instant, sans revenir en arrière. L'alternative est le *beam search*, qui garde plusieurs hypothèses en parallèle. Il peut aussi utiliser un modèle de langue. Il est plus précis, mais plus lent.
+
+**Où on l'a appliquée.** `greedy_decode` dans `stt/metrics.py`. On l'utilise dans `stt_03_overfit_10_clips.ipynb` et, plus tard, à chaque évaluation sur le dev.
+
+**Pourquoi.**
+- Sans décodage, on ne peut calculer ni WER ni CER, et on ne peut pas lire ce que le modèle « entend ». Dans le test d'overfitting, c'est grâce à lui qu'on a vu la **phase des blanks** : aux itérations 25–50, la phrase décodée était vide.
+- On ne lit que les `lengths[b]` premiers instants. Les instants suivants sont du **padding** : sans cette limite, on décoderait du bruit à la fin des phrases courtes.
+- Test : `_aa_ab__` donne bien « aab ». Avec une longueur de 3, on obtient « a ».
+
+**Code** (`stt/metrics.py`) :
+
+```python
+def greedy_decode(log_probs, lengths):
+    """Sortie du modèle -> phrases, avec les règles du CTC."""
+    best = log_probs.argmax(dim=-1)                 # (B, T') : le symbole le plus probable à chaque instant
+    sentences = []
+    for b in range(best.shape[0]):
+        ids, previous = [], None
+        for i in best[b, :lengths[b]].tolist():     # seulement les vrais instants (pas le padding)
+            if i != previous and i != 0:            # 1) fusion des répétitions  2) suppression des blanks (indice 0)
+                ids.append(i)
+            previous = i
+        sentences.append(decode(ids))
+    return sentences
+```
+
+---
+
+## 21. La distance d'édition, le WER et le CER
+
+**Explication.** La **distance d'édition** (ou distance de Levenshtein) est le nombre **minimum** d'opérations pour transformer la phrase de référence en phrase prédite. Il y a trois opérations :
+- **substitution :** « chat » → « ch**o**t » ;
+- **suppression :** « chat » → « cht » ;
+- **insertion :** « chat » → « chat**s** ».
+
+Chaque exemple coûte 1. On la calcule par **programmation dynamique** : un tableau dont la case (i, j) donne la distance entre les i premiers éléments de la référence et les j premiers de la prédiction. Chaque case se déduit de ses trois voisines, en haut, à gauche et en diagonale.
+
+- **WER = (S + D + I) / N**, sur les **mots**, avec N le nombre de mots de la référence. Exemple : « le chat dort » → « le chien dort » donne 1 substitution sur 3 mots, soit **33 %**.
+- **CER :** le même calcul sur les **caractères**.
+- Le WER et le CER peuvent **dépasser 100 %**, puisque les insertions s'ajoutent sans limite.
+- Sur plusieurs phrases, on **additionne** les erreurs et les longueurs avant de diviser. On ne fait pas la moyenne des pourcentages, car une phrase de 3 mots compterait autant qu'une phrase de 30.
+
+**Où on l'a appliquée.** `edit_distance` et `error_rate` dans `stt/metrics.py`.
+
+**Pourquoi.**
+- Le WER est la **métrique de référence** en STT (notion 19). C'est lui qui permettra de comparer notre modèle à Whisper.
+- La loss CTC dit si le modèle progresse, mais pas **combien de mots** il rate. Dans le test d'overfitting, une loss de 0,038 correspondait à un WER de 8,6 %, et seul le WER se comprend directement.
+- Dans ce même test, on a observé un CER de **124 %** à l'itération 1 et un WER de **109,9 %** à l'itération 75. Ce sont des insertions : le modèle produisait plus de lettres, ou de mots, que la phrase n'en contenait.
+
+**Code** (`stt/metrics.py`) :
+
+```python
+def edit_distance(ref, hyp):
+    """Nombre minimum de substitutions + suppressions + insertions pour passer de ref à hyp."""
+    previous_row = list(range(len(hyp) + 1))        # passer de "" à hyp[:j] = j insertions
+    for i, r in enumerate(ref, start=1):
+        row = [i]                                   # passer de ref[:i] à "" = i suppressions
+        for j, h in enumerate(hyp, start=1):
+            row.append(min(previous_row[j] + 1,                 # suppression
+                           row[j - 1] + 1,                      # insertion
+                           previous_row[j - 1] + (r != h)))     # substitution (0 si identique)
+        previous_row = row
+    return previous_row[-1]
+
+
+def error_rate(references, hypotheses, unit):
+    """WER (unit="mot") ou CER (unit="caractère"), en %."""
+    split = (lambda s: s.split()) if unit == "mot" else list
+    errors = sum(edit_distance(split(r), split(h)) for r, h in zip(references, hypotheses))
+    total = sum(len(split(r)) for r in references)
+    return 100 * errors / total
+```
+
+---
+
+## 22. Le test d'overfitting (*sanity check*) et la boucle d'entraînement
+
+**Explication.**
+- **La boucle d'entraînement.** Une **itération** enchaîne quatre étapes :
+  1. le **forward** (on calcule la sortie) ;
+  2. la **loss** (on mesure l'erreur) ;
+  3. la **backpropagation** (`loss.backward()` calcule, pour chaque poids, dans quel sens le bouger) ;
+  4. le **pas de l'optimizer** (`optimizer.step()` bouge les poids).
+
+  `optimizer.zero_grad()` efface les gradients de l'itération précédente, car PyTorch les **additionne** par défaut.
+- **Le test d'overfitting.** Avant un long entraînement, on vérifie que le modèle est **capable d'apprendre par cœur** un tout petit jeu de données. S'il n'y arrive pas, il y a un bug : une forme fausse, une mauvaise loss ou des poids non entraînés. C'est une pratique standard de l'industrie, appelée *sanity check* (« overfit a single batch »).
+- **`.train()` / `.eval()`.** Le dropout n'est actif qu'en mode `.train()`. En `.eval()`, il est coupé : les résultats sont stables et un peu meilleurs.
+
+**Où on l'a appliquée.** `stt_03_overfit_10_clips.ipynb` : 10 clips, 400 itérations sur CPU.
+
+**Pourquoi.**
+- Un entraînement complet sur Kaggle dure des heures. Découvrir un bug au bout de 5 h coûterait cher. Ce test l'a vérifié en 23 min.
+- **Résultat :**
+  - la loss passe de 6,41 à environ 0,02 ;
+  - en `.eval()`, on obtient un WER de **3,7 %** et un CER de **0,6 %**, et les phrases sont recopiées mot pour mot ;
+  - **le pipeline fonctionne.**
+- **Le dropout se voit dans les chiffres :**
+  - en `.train()`, le WER oscillait entre 6 et 14 % sur le plateau ;
+  - en `.eval()`, il tombe à 3,7 %.
+- **Le piège du format :** `nn.CTCLoss` attend le temps en **premier**, `(T', B, C)`, alors que le modèle sort `(B, T', C)`. D'où le `transpose(0, 1)`.
+
+**Code** (`stt_03_overfit_10_clips.ipynb`) :
+
+```python
+model.train()                                    # dropout actif (mode entraînement)
+for step in range(1, N_STEPS + 1):
+    # 1. Forward : log-probabilités (B, T', 50) et longueurs réduites
+    log_probs, out_lengths = model(features, feature_lengths)
+    # 2. Loss CTC : nn.CTCLoss attend le temps en PREMIER -> (T', B, 50)
+    loss = ctc_loss(log_probs.transpose(0, 1), targets, out_lengths, target_lengths)
+    # 3. Backpropagation : on efface les anciens gradients, puis on calcule les nouveaux
+    optimizer.zero_grad()
+    loss.backward()
+    # Gradient clipping : plafonne la norme à 1 pour éviter un pas trop brutal
+    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    # 4. Mise à jour des poids
+    optimizer.step()
+```
+
+---
+
+## 23. Le scheduler : warmup puis décroissance cosinus
+
+**Explication.** Le *scheduler* fait varier le learning rate au fil de l'entraînement. Le nôtre a deux phases :
+- **Warmup :** le learning rate monte en ligne droite, de presque 0 jusqu'à son maximum. Au début, les poids sont aléatoires et les gradients sont grands et désordonnés. Un petit learning rate empêche ces premiers pas de « casser » le modèle.
+- **Décroissance cosinus :** il redescend ensuite en demi-vague, `0,5 × (1 + cos(π × progression))`. La progression va de 0 à 1, donc le cosinus va de 1 à −1, et le multiplicateur de 1 à 0. La baisse est lente au début, rapide au milieu, puis de nouveau lente à la fin. À la fin, les pas sont minuscules : le modèle **affine** sa solution au lieu de sauter autour.
+
+Exemple : avec un maximum de 1e‑3 et un warmup de 4 060 itérations, le learning rate vaut 1e‑3 × 1/4 060 = 2,5e‑7 à l'itération 0. Il vaut 1e‑3 à la fin du warmup, puis 5e‑4 au **milieu de la descente**. Ce milieu tombe à l'époque (10 + 200) / 2 = **105**, et non 100, parce que la descente ne commence qu'à la fin du warmup.
+
+`LambdaLR` (PyTorch) multiplie le learning rate maximum par la valeur que renvoie **notre** fonction. On appelle `scheduler.step()` **à chaque itération**, juste après `optimizer.step()`.
+
+**Où on l'a appliquée.** La fonction `warmup_cosine` a été testée dans la cellule 4 du notebook Kaggle. Elle sera utilisée par la boucle d'entraînement.
+
+**Pourquoi.**
+- **Le warmup.** Dans le test d'overfitting, la norme du gradient valait **18,7** à la 1re itération, contre 0,2 à 2 ensuite.
+- **Le cosinus plutôt que Noam.** La durée totale est connue : 200 époques × 406 = 81 200 itérations. C'est aussi le standard actuel (wav2vec2, Whisper).
+- **Le cosinus plutôt qu'un learning rate constant.** Un learning rate constant n'a ni warmup ni affinage.
+- **Vérification :** les quatre valeurs calculées à l'avance ont été retrouvées avec le vrai `LambdaLR` (2,46e‑07 ; 1,00e‑03 ; 5,00e‑04 ; 4,15e‑13).
+
+**Code :**
+
+```python
+def warmup_cosine(step, warmup_steps, total_steps):
+    """Multiplicateur du learning rate (entre 0 et 1) à l'itération `step`."""
+    if step < warmup_steps:
+        return (step + 1) / warmup_steps                              # montée linéaire : ~0 -> 1 (+1 : le 1er pas n'est pas nul)
+    progress = (step - warmup_steps) / (total_steps - warmup_steps)  # 0 -> 1 pendant la décroissance
+    return 0.5 * (1 + math.cos(math.pi * progress))                   # demi-vague cosinus : 1 -> 0
+
+scheduler = torch.optim.lr_scheduler.LambdaLR(
+    optimizer, lambda step: warmup_cosine(step, WARMUP_STEPS, TOTAL_STEPS))
+```

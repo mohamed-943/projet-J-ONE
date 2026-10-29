@@ -347,3 +347,84 @@ Fichier : `stt/model.py`.
   - l'entrée `(8, 627, 80)` donne une sortie `(8, 156, 50)` ;
   - la contrainte du CTC est respectée pour les 8 clips (par exemple 94 instants pour 55 caractères) ;
   - les probabilités somment à 1 à chaque instant.
+
+## 2026-10-29 — Test d'overfitting sur 10 clips (PC, CPU)
+
+Notebook : `stt_03_overfit_10_clips.ipynb`.
+
+- **But :** vérifier que tout le pipeline peut **apprendre** : forward, loss CTC, backpropagation et optimizer. On entraîne sur 10 clips seulement : le modèle doit les apprendre par cœur. Ici, l'overfitting est **voulu**.
+- **Réglages :**
+  - modèle de taille S (3,6 M de paramètres) ;
+  - un seul batch de 10 clips, de forme `(10, 595, 80)`, avec des phrases de 21 à 88 caractères ;
+  - optimizer AdamW, learning rate de 1e‑3 ;
+  - *gradient clipping* à 1 ;
+  - 400 itérations.
+- **Fonctions ajoutées dans le notebook** (à ranger dans `stt/` après validation) :
+  - `greedy_decode` : argmax, puis fusion des répétitions, puis suppression des blanks ;
+  - `edit_distance` ;
+  - `error_rate`, qui calcule le WER et le CER.
+- **Piège évité :** `nn.CTCLoss` attend le temps en premier, `(T', B, C)`. D'où le `log_probs.transpose(0, 1)`.
+
+| Itération | Loss | WER | CER | Phrase prédite pour le 1er clip | Phase |
+|---|---|---|---|---|---|
+| 1 | 6,41 | 100 % | 124 % | lettres aléatoires | Modèle non entraîné |
+| 25–50 | 3,06 → 2,92 | 100 % | 89 → 85 % | vide (que des blanks) | Phase normale du CTC : le blank est appris en premier |
+| 75–100 | 2,62 → 1,73 | ≈ 100 % | 68 → 58 % | « i e art earnie… » | Premiers sons et mots courts |
+| 125–200 | 0,65 → 0,08 | 72 → 12 % | 22 → 3 % | « il est planté de marronirs… » | Apprentissage rapide |
+| 225–400 | ≈ 0,02–0,05 | 6–14 % | 1–2 % | quasi exact | Plateau. Les petites oscillations viennent du dropout, actif en mode `.train()`. |
+| **Final (`.eval()`)** | — | **3,7 %** | **0,6 %** | identique à la référence | |
+
+- **Diagnostic : ✅ le test est réussi.**
+  - La loss descend de 6,4 à environ 0,02, sans `nan`.
+  - La norme du gradient reste raisonnable (pic de 18,7 à la 1re itération seulement, puis entre 0,2 et 2).
+  - Les phrases sont recopiées. Exemple : « il est enterré au forest lawn memorial park cemetery à glendale en californie. »
+  - **Le code peut apprendre. On peut passer à l'entraînement réel sur Kaggle.**
+- **Remarques :**
+  - Le CER de 124 % à la 1re itération et le WER de 109,9 % à l'itération 75 dépassent 100 %. C'est possible, parce que les **insertions** (des mots ou caractères en trop) comptent comme des erreurs.
+  - **Durée : 1 407 s (≈ 23 min) pour 400 itérations sur CPU**, soit environ 3,5 s par itération sur 10 clips. Une seule époque sur les 12 982 clips prendrait des heures sur CPU. Cela confirme le besoin du GPU de Kaggle.
+
+## 2026-10-29 — Module `stt/metrics.py`
+
+- **Décision :** les trois fonctions du test d'overfitting ont été **validées**. Elles sont rangées dans `stt/metrics.py` (`greedy_decode`, `edit_distance`, `error_rate`) pour être réutilisées par l'entraînement sur Kaggle. Le notebook `stt_03` les importe désormais depuis ce module.
+- **Vérification sur des exemples connus :**
+  - « chat » → « chats », « chot » et « cht » : 1 erreur chacun ;
+  - « le chat dort » → « le chien dort » : WER de 33,3 % ;
+  - la sortie `_aa_ab__` est décodée en « aab ». Avec une longueur de 3, on obtient « a », ce qui montre que le padding est bien ignoré.
+- **Notions ajoutées :** 20 (décodage glouton du CTC), 21 (distance d'édition, WER, CER), 22 (test d'overfitting et boucle d'entraînement).
+
+## 2026-10-30 — Mise en place sur Kaggle et choix du scheduler
+
+- **Réglages Kaggle :**
+  - Secret `MDC_API_KEY` ajouté (la clé n'apparaît jamais dans le code) ;
+  - accélérateur GPU T4 et Internet activés.
+- **Cellule 1 :** clone de la branche `stt-transformer-junior` (75 fichiers, 238 Ko, sans les données). Le GPU est confirmé : Tesla T4.
+- **Cellule 2 :** téléchargement depuis MDC des archives fr-FR (167 Mo), fr-CA (291 Mo) et du corpus spontané (49 Mo), en environ 7 s.
+  - Les données sont décompressées dans `/tmp/data`, un dossier non sauvegardé avec le notebook : les conditions MDC interdisent de republier le dataset.
+  - Un lien `data → /tmp/data` permet de garder les mêmes chemins que sur le PC.
+- **Cellule 3, mesure de vitesse** (30 itérations, batch de 32, `num_workers=4`) :
+
+| | PC (CPU) | Kaggle (T4) |
+|---|---|---|
+| Une itération | 3,5 s pour 10 clips | 0,29 s pour 32 clips |
+| Une époque (12 982 clips, 406 itérations) | ≈ 75 min | **≈ 2 min** |
+| Mémoire GPU maximale | — | 1,7 Go sur 15 Go |
+
+- **Décision : 200 époques** (≈ 7 h, soit 81 200 itérations).
+  - Le quota hebdomadaire de Kaggle n'est pas une contrainte.
+  - Les risques sont couverts par des sauvegardes régulières (reprise après une coupure) et par l'early stopping sur le WER dev.
+- **Décision : le scheduler A, warmup puis décroissance cosinus** (contre Noam et un learning rate constant), avec ces réglages :
+  - learning rate maximum de 1e‑3 ;
+  - warmup de 5 %, soit 4 060 itérations (≈ 10 époques).
+
+  Raisons :
+  - c'est le standard actuel ;
+  - la durée totale de l'entraînement est connue ;
+  - le warmup adoucit le pic de gradient du départ (18,7 dans le test d'overfitting) ;
+  - la fin en douceur permet d'affiner le modèle.
+- **Vérification avec le vrai `LambdaLR` de PyTorch :**
+  - learning rate de 2,46e‑07 à l'itération 0 ;
+  - 1,00e‑03 à la fin du warmup ;
+  - 5,00e‑04 à l'époque 105 ;
+  - 4,15e‑13 à la fin.
+
+  Les quatre valeurs sont celles calculées à l'avance. La courbe a la forme attendue.
