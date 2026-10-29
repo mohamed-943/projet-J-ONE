@@ -274,3 +274,76 @@ Notebook : `stt_02_pretraitement.ipynb`. On suit un seul clip, étape par étape
   - Les 0 ajoutés aux cibles ne posent pas de problème : le CTC lit `target_lengths` et ignore ce qui dépasse.
 - **Exemple de batch de 8 clips :** features `(8, 757, 80)`, cibles `(8, 87)`. Les longueurs réelles vont de 389 à 757 instants.
 - **Observation :** le clip le plus court du batch est composé à **49 % de padding**, ce qui représente du calcul gaspillé. Une piste d'optimisation consisterait à regrouper les clips de longueurs proches dans un même batch (*bucketing*).
+
+---
+
+## 2026-10-29 — Modèle : bloc 1, sous-échantillonnage
+
+Fichier : `stt/model.py`.
+
+- **Décision :** sous-échantillonnage par **deux convolutions 2D** (filtre 3 × 3, pas de 2, chacune suivie d'une ReLU), puis une projection linéaire vers `d_model`. Le nombre d'instants est ainsi divisé par environ 4.
+- **Options écartées :**
+  - une convolution 1D avec réduction ÷ 2 : plus simple, mais l'attention coûte 4 fois plus cher ;
+  - l'empilement de 4 instants suivi d'un `nn.Linear` : n'apprend pas de motifs locaux.
+- **Justification :**
+  - le coût de l'attention est divisé par 16 ;
+  - la réduction ÷ 4 respecte la contrainte du CTC mesurée à l'EDA (au maximum 22,6 instants nécessaires par seconde, pour 25 disponibles) ;
+  - c'est la méthode standard des modèles STT récents.
+- **Test** (avec les valeurs provisoires `channels=32` et `d_model=144`) :
+  - un batch `(8, 663, 80)` devient `(8, 165, 144)` ;
+  - les vraies longueurs sont réduites avec la même formule, par exemple 315 → 78 ;
+  - calcul à la main : ⌊(663 − 3) / 2⌋ + 1 = 331, puis ⌊(331 − 3) / 2⌋ + 1 = 165. Le résultat est conforme.
+
+## 2026-10-29 — Modèle : bloc 2, encodage des positions
+
+- **Options étudiées :**
+  - A. Sinusoïdal (Transformer original) ;
+  - B. Appris (une table de positions) ;
+  - C. Relatif ou rotatif (RoPE).
+- **Décision : A, sinusoïdal.**
+  - Il est simple et ne demande aucun paramètre à apprendre.
+  - Il est défini pour toutes les longueurs. C'est nécessaire, car le test spontané va jusqu'à 83 s, alors que l'entraînement s'arrête à 11 s. L'option B en serait incapable.
+  - **Critère pour changer :** si le WER se dégrade fortement sur la tranche de plus de 30 s, on passera à l'option C. Cela constituera une expérience comparative pour le rapport.
+- **Test :** la forme est inchangée `(8, 153, 144)`, le module a 0 paramètre appris, et la position 0 vaut `[0, 1, 0, 1, …]`.
+
+## 2026-10-29 — Modèle : bloc 3, attention
+
+- **Options étudiées :**
+  - A. Écrire l'attention à la main ;
+  - B. Utiliser directement les modules de PyTorch ;
+  - C. Les deux.
+- **Décision : C.**
+  - On écrit chaque composant à la main pour le comprendre.
+  - On le **vérifie contre l'équivalent PyTorch** avec un test de référence.
+  - On entraîne avec les versions optimisées de PyTorch, ce qui correspond aux standards professionnels (rapidité, fiabilité).
+- **Morceau 1, attention à une tête et masque du padding :**
+  - fonctions `make_padding_mask` et `scaled_dot_product_attention` dans `stt/model.py` ;
+  - test : le padding reçoit un poids de 0, chaque ligne de poids somme à 1, et la sortie est **identique à `F.scaled_dot_product_attention`**.
+- **Morceau 2, multi-head attention :**
+  - classe `MultiHeadSelfAttention` : Q, K et V sont produits par une seule couche linéaire, la séquence est découpée en têtes, puis recollée, puis passe dans une projection de sortie ;
+  - l'option `use_pytorch_kernel` choisit entre notre attention et la version optimisée ;
+  - test : sortie `(2, 4, 144)`, **identique à `nn.MultiheadAttention`** (après copie des mêmes poids) et identique à la version optimisée.
+- **Morceaux 3 et 4, feed-forward et bloc complet :**
+  - **Décisions :**
+    - **pre-norm** plutôt que post-norm, pour la stabilité de l'entraînement de zéro avec un budget GPU limité ; c'est aussi le choix de Whisper et des modèles récents ;
+    - **GELU**, le standard des Transformers ;
+    - **dropout de 0,1**, à cause du risque d'overfitting avec seulement 275 locuteurs (EDA, point 6).
+  - Classes `FeedForward` (Linear → GELU → Dropout → Linear) et `TransformerBlock`, qui calcule x + Attention(LayerNorm(x)), puis x + FFN(LayerNorm(x)).
+  - **Test :** le résultat est **identique à `nn.TransformerEncoderLayer(norm_first=True, activation="gelu")`**, avec les mêmes poids et en mode `.eval()`.
+- **Notions :** `NOTIONS_THEORIQUES.md` contient désormais, pour chaque notion, le morceau de code retenu avec ses commentaires.
+
+## 2026-10-29 — Modèle complet : `SpeechTransformer`
+
+- **Décision sur la taille : « S »**, soit `d_model = 144`, 12 blocs, 4 têtes, `d_ff = 576`, 144 canaux de convolution et **3,60 M de paramètres**.
+  - **Configurations comparées :** XS (1,7 M), S (3,6 M), M (11,3 M), L (45,2 M ≈ Whisper tiny).
+  - **Justification :** avec 19 h de données et 275 locuteurs, un modèle plus gros risquerait de mémoriser les données plutôt que de généraliser. La taille S permet aussi des entraînements rapides, donc plusieurs essais dans les 30 h de GPU hebdomadaires. On passera à M ou L avec le dataset complet (MDC, environ 1 200 h).
+- **Organisation de `stt/model.py` :** le fichier se lit de haut en bas dans l'ordre du pipeline. L'en-tête du fichier indique d'où viennent les données (`audio.py`, `text.py`, `dataset.py`) et où elles vont (loss CTC). La classe `SpeechTransformer`, placée en bas du fichier, assemble les étapes.
+- **Éléments ajoutés à l'assemblage :**
+  - une **LayerNorm finale** : en pre-norm, la sortie du dernier bloc n'est jamais normalisée ;
+  - une **output head** `Linear(144 → 50)` ;
+  - un **`log_softmax`**, parce que `nn.CTCLoss` attend des log-probabilités ;
+  - une **`nn.ModuleList`** pour les blocs, afin que PyTorch suive leurs paramètres.
+- **Test sur un vrai batch :**
+  - l'entrée `(8, 627, 80)` donne une sortie `(8, 156, 50)` ;
+  - la contrainte du CTC est respectée pour les 8 clips (par exemple 94 instants pour 55 caractères) ;
+  - les probabilités somment à 1 à chaque instant.
