@@ -1,0 +1,5 @@
+# Datasets audio (Common Voice / Mozilla Data Collective : redistribution interdite)
+data/
+
+# Environnement virtuel uv
+.venv/
