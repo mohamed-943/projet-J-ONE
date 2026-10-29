@@ -109,7 +109,7 @@ Plan : chaque point doit aboutir à une décision pour le modèle.
 - **Données spontanées utilisables :** **294 clips**, **41 locuteurs**, **65 minutes** au total.
 - **Répartition très inégale :** le locuteur le plus actif a 45 clips, la moitié des locuteurs en a 3 ou moins, et un quart n'en a qu'un seul.
 - **Décision :** on ne conserve que les clips transcrits, et **tout le spontané sert de jeu de test** (option A). Avec 65 minutes, l'ajouter aux ~19 h d'entraînement n'aurait que peu d'effet. En revanche, garder les 294 clips et les 41 locuteurs en test donne une mesure plus fiable du WER sur de la parole naturelle, proche de ce qu'entendra le robot. Un découpage 70 / 30 aurait laissé environ 90 clips en test, ce qui rend le WER instable.
-- À vérifier au point 7 : l'écart entre 716 mp3 et 688 lignes.
+- À vérifier au point 7 : l'écart entre 716 mp3 et 688 lignes. Hypothèse : il s'agit d'enregistrements signalés par la communauté (`ss-reported-audios-fr.tsv`).
 
 ### Point 2 : inventaire des caractères et normalisation du texte
 
@@ -168,7 +168,7 @@ Plan : chaque point doit aboutir à une décision pour le modèle.
   - une réduction **÷ 4 est possible**, mais la marge est faible : 25 instants/s disponibles, pour un maximum observé de 22,6 ;
   - une réduction ÷ 2, ou aucune réduction, laisse une marge confortable, mais coûte plus cher en calcul.
 - **Décision reportée** à la conception de l'architecture : le choix se fera entre ÷ 2 et ÷ 4.
-- **À vérifier :** un clip ne demande que 1,05 instant par seconde.
+- **À vérifier :** un clip ne demande que 1,05 instant par seconde. C'est peut-être un long silence, ou un texte qui ne correspond pas à l'audio.
 
 ### Point 6 : répartition des locuteurs
 
@@ -212,4 +212,65 @@ Plan : chaque point doit aboutir à une décision pour le modèle.
 
 **Jeu de test spontané final :** **230 clips**, **38 locuteurs**, **50,8 minutes**. Répartition par durée : 131 clips de moins de 11 s, 79 de 11 à 30 s, et 20 de plus de 30 s.
 
-**Piste d'amélioration future :** détecter les hésitations, les bruits et la toux, ce qui serait utile pour l'interaction avec le robot. Cela demanderait des données d'**entraînement** annotées pour ces événements, par exemple nos propres enregistrements avec le robot. C'est peut-être un long silence, ou un texte qui ne correspond pas à l'audio. Hypothèse : il s'agit d'enregistrements signalés par la communauté (`ss-reported-audios-fr.tsv`).
+**Piste d'amélioration future :** détecter les hésitations, les bruits et la toux, ce qui serait utile pour l'interaction avec le robot. Cela demanderait des données d'**entraînement** annotées pour ces événements, par exemple nos propres enregistrements avec le robot.
+
+---
+
+## 2026-10-29 — Organisation du code dans le dépôt de l'équipe
+
+- **Dépôt de l'équipe :** [mohamed-943/projet-J-ONE](https://github.com/mohamed-943/projet-J-ONE), un dépôt public. Il contient déjà un pipeline vocal de production pour le robot (Silero VAD → Whisper turbo → LLM → Piper TTS).
+- **Décision :** notre travail est un **axe de recherche** mené à côté de ce pipeline. Il est placé sur la branche `stt-transformer-junior`, dans le dossier `recherche/stt_transformer/`, avec son propre environnement `uv`. Il ne modifie rien dans `jone/`.
+- **Intérêt pour le rapport :** on pourra comparer notre modèle à Whisper (WER, latence, ressources) sur le même jeu de test.
+- **Précaution :** les données ne sont pas versionnées, et les sorties de notebook qui affichent de vraies lignes de Common Voice sont effacées avant chaque envoi sur GitHub, conformément à la licence MDC.
+
+---
+
+## 2026-10-29 — Prétraitement audio
+
+Notebook : `stt_02_pretraitement.ipynb`. On suit un seul clip, étape par étape.
+
+| Étape | Outil | Forme du tenseur (clip de 4,656 s) |
+|---|---|---|
+| 1. Lecture du mp3 | `soundfile`, puis `torch.from_numpy` | `(223488,)` à 48 kHz |
+| 2. Rééchantillonnage à 16 kHz | `torchaudio.functional.resample` : filtre passe-bas anti-aliasing, puis réduction du nombre d'échantillons | `(74496,)`, soit un rapport de 3 |
+| 3. Spectrogramme log-Mel | `torchaudio.transforms.MelSpectrogram`, puis `log(x + 1e-6)`, puis transposition | `(466, 80)` = (instants, caractéristiques) |
+
+- **Décision sur les paramètres du log-Mel :** fenêtre de **25 ms** (400 échantillons), pas de **10 ms** (160 échantillons, soit 100 instants par seconde), **80 bandes Mel**. C'est le standard de la reconnaissance vocale, avec les mêmes réglages que Whisper, ce qui rend la comparaison plus juste.
+- **Nombre d'instants :** 1 + ⌊74 496 / 160⌋ = 466. torchaudio centre la première fenêtre sur l'échantillon 0.
+- **Valeurs observées :** minimum −13,8 (= log(1e‑6), donc des bandes d'énergie nulle), maximum 6,6, moyenne −7,8, écart-type 5,6. Les valeurs ne sont pas centrées : une **normalisation** est à décider.
+
+| Étape | Outil | Résultat |
+|---|---|---|
+| 4. Normalisation par clip | Moyenne et écart-type de chaque bande Mel, calculés sur les instants du clip (`dim=0`), puis `(x − moyenne) / (écart-type + 1e‑5)` | Forme inchangée `(466, 80)`, moyenne ≈ 0, écart-type ≈ 1 |
+| 5. Encodage du texte | Vocabulaire de **50 symboles** : le blank (indice 0, valeur par défaut de `nn.CTCLoss`), puis les 49 caractères triés (indices 1 à 49) | Phrase de 61 caractères → tenseur `(61,)`. Le décodage redonne exactement le texte. |
+
+- **Décision sur la normalisation :** **par clip**, plutôt que globale ou à formule fixe (façon Whisper).
+  - Elle compense les différences de micro et de volume entre les enregistrements, ce qui est essentiel pour passer de Common Voice au micro du robot.
+  - Sur le robot, le VAD fournit de toute façon des énoncés complets à normaliser.
+- **Vérification de la contrainte du CTC sur ce clip :** 61 caractères + 2 lettres doublées (« rr », « ss ») = **63 instants nécessaires**.
+  - Avec une réduction ÷ 4, on dispose de 466 / 4 ≈ 116 instants : la contrainte est respectée.
+  - Avec ÷ 8, on n'en aurait que ≈ 58, ce qui la rend impossible. C'est cohérent avec le point 5 de l'EDA.
+
+### Organisation du code : un module Python
+
+- **Décision :** le code validé est rangé dans un module `stt/`, que les notebooks importent. On évite ainsi de recopier les fonctions d'un notebook à l'autre, avec le risque d'incohérence que cela comporte. Ce même module servira à lancer l'entraînement sur Kaggle, puis à l'intégration dans le robot. C'est aussi l'organisation qu'utilise l'équipe dans `jone/`.
+  - `stt/text.py` : `normalize`, `is_valid`, le vocabulaire (`VOCAB`, `CHAR_TO_ID`, `ID_TO_CHAR`), `encode` et `decode`.
+  - `stt/audio.py` : `load_audio` (lecture du mp3, passage en mono, rééchantillonnage à 16 kHz) et `log_mel` (log-Mel puis normalisation par clip).
+- **Vérification :** sur le clip étudié, le module donne exactement le même résultat que les cellules du notebook (features égales à 1e‑5 près, cible identique).
+
+### Dataset PyTorch
+
+- `stt/dataset.py` contient deux éléments :
+  - `load_split(folders, split)` assemble les fichiers `.tsv` d'un découpage pour plusieurs segments, normalise le texte, écarte les phrases non valides et garde les colonnes `audio_path`, `text` et `client_id` ;
+  - `CommonVoiceDataset` est une classe qui hérite de `torch.utils.data.Dataset`. Sa méthode `__getitem__` prétraite chaque clip **au moment où on le demande**, sans garder tous les spectrogrammes en mémoire.
+- **Tailles obtenues :** train = **12 982 clips** (13 163 − 181 phrases écartées), dev = **484 clips**, test (lu) = 285 clips.
+- **Optimisation possible plus tard :** précalculer les features et les enregistrer sur disque, si le calcul du log-Mel à chaque époque ralentit l'entraînement sur Kaggle.
+
+### DataLoader et padding
+
+- `collate_batch` (dans `stt/dataset.py`) assemble les clips d'un batch :
+  - elle complète les features et les cibles avec des 0 jusqu'à la longueur maximale du batch, avec `pad_sequence(batch_first=True)` ;
+  - elle renvoie aussi les **vraies longueurs**, nécessaires au CTC et au masque d'attention.
+  - Les 0 ajoutés aux cibles ne posent pas de problème : le CTC lit `target_lengths` et ignore ce qui dépasse.
+- **Exemple de batch de 8 clips :** features `(8, 757, 80)`, cibles `(8, 87)`. Les longueurs réelles vont de 389 à 757 instants.
+- **Observation :** le clip le plus court du batch est composé à **49 % de padding**, ce qui représente du calcul gaspillé. Une piste d'optimisation consisterait à regrouper les clips de longueurs proches dans un même batch (*bucketing*).
