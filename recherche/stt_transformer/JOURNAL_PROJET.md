@@ -428,3 +428,132 @@ Notebook : `stt_03_overfit_10_clips.ipynb`.
   - 4,15e‑13 à la fin.
 
   Les quatre valeurs sont celles calculées à l'avance. La courbe a la forme attendue.
+
+## 2026-10-30 — Essai de la boucle complète sur Kaggle (2 époques)
+
+- **Boucle :**
+  - forward → loss CTC → backward → clipping → `optimizer.step()` → `scheduler.step()` ;
+  - à la fin de chaque époque, `evaluate` mesure le dev (16 batchs).
+- **Sauvegardes à chaque époque :**
+  - `best.pt` : le meilleur WER dev, pour l'early stopping ;
+  - `last.pt` : modèle, optimizer, scheduler, époque et historique, pour la reprise ;
+  - `history.json` : pour tracer les courbes.
+- **Résultats de l'essai :**
+
+| Époque | Loss train | Loss dev | WER dev | CER dev | Durée |
+|---|---|---|---|---|---|
+| 1 | 2,70 | 2,32 | 101,0 % | 61,0 % | 1,5 min |
+| 2 | 2,26 | 2,16 | 100,4 % | 57,0 % | 1,5 min |
+
+- **Observations :**
+  - La phase des blanks est dépassée dès la 1re époque : des syllabes sont reconnaissables (« pré », « de l'ère »).
+  - La loss dev est plus basse que la loss train. C'est normal : la loss train est une moyenne sur l'époque, avec dropout, alors que la loss dev est mesurée à la fin, sans dropout.
+  - Le pic de gradient du départ (22,7) est absorbé par le warmup et le clipping.
+  - **Durée réelle : 1,5 min par époque**, donc 200 époques ≈ 5 h.
+- **Incident instructif :** la boucle a été relancée sans réinitialiser `start_epoch`. Le learning rate est alors **remonté** de 0 à 9,9e‑4 : au-delà de la fin, la formule du cosinus remonte. Pendant ce temps, le modèle a continué d'apprendre (CER dev de 54,3 % après 4 époques au total).
+- **Test de reprise ✅ :** en relançant la cellule de préparation, on lit `départ à l'époque 3`. La sauvegarde `last.pt` est donc bien relue.
+
+## 2026-11-02 — Premier entraînement complet : taille S, 200 époques (Kaggle T4)
+
+- **Lancement :** *Save & Run All* (exécution en arrière-plan), 4 cellules : clone → téléchargement MDC → préparation → boucle.
+  - **1er essai échoué en 2 min :** les cellules du clone et du téléchargement avaient été supprimées. Dans une machine neuve, ni `stt/` ni les données n'existent. Après les avoir remises, l'entraînement a tourné jusqu'au bout.
+- **Durée :** 1,4 min par époque, soit **≈ 4 h 40** pour 200 époques. Pas de `NaN`, pas de coupure.
+
+| Époque | Loss train | Loss dev | WER dev | CER dev | Learning rate | Remarque |
+|---|---|---|---|---|---|---|
+| 1 | 3,33 | 2,77 | 101,1 % | 77,3 % | 1,0e‑4 | Début du warmup |
+| 10 | 1,71 | 1,69 | 95,4 % | 43,7 % | 1,0e‑3 | Fin du warmup |
+| 20 | 1,14 | 1,38 | 84,7 % | 35,4 % | 9,9e‑4 | |
+| 31 | 0,85 | **1,34** | 80,9 % | 32,6 % | 9,7e‑4 | **Loss dev minimale** |
+| 50 | 0,59 | 1,46 | 78,0 % | 30,5 % | 8,9e‑4 | |
+| 100 | 0,30 | 1,73 | 75,3 % | 29,3 % | 5,4e‑4 | |
+| **158** | 0,14 | 2,16 | **72,5 %** | **28,0 %** | 1,2e‑4 | **Meilleur WER dev → `best.pt`** |
+| 200 | 0,11 | 2,29 | 73,2 % | 28,0 % | 0 | Fin |
+
+- **Observations :**
+  1. **Overfitting net.**
+     - La loss train descend jusqu'à 0,11, alors que la loss dev **remonte** à partir de l'époque 31, de 1,34 à 2,29.
+     - Le modèle mémorise les phrases et les voix du train : 19 h de parole et 275 locuteurs, c'est peu pour 3,6 M de paramètres.
+  2. **La loss dev et le WER divergent.** Malgré la remontée de la loss dev, le WER dev continue de baisser lentement : 80,9 % à l'époque 31, 72,5 % à l'époque 158. La loss CTC punit très fort les erreurs commises **avec certitude**. Le modèle devient trop sûr de lui sur ses erreurs, ce qui fait monter la loss, tout en prenant un peu plus de bonnes décisions, ce qui fait baisser le WER.
+     - **Conclusion :** choisir le meilleur modèle sur le **WER** (notre choix) plutôt que sur la loss dev était le bon critère.
+  3. **Rendements décroissants.**
+     - La quasi-totalité du gain arrive avant l'époque 50 (WER 78 %).
+     - Les 150 époques suivantes ne font gagner que 5,5 points.
+  4. **CER de 28 %, WER de 73 %.**
+     - Le modèle **entend** correctement la plupart des sons : la phrase prédite est phonétiquement proche.
+     - En revanche, il **orthographie mal** : lettres muettes, accords, mots coupés ou collés.
+     - Un modèle CTC par caractères, **sans modèle de langue**, n'a aucune notion de ce qu'est un mot français valide : une seule lettre fausse suffit à rendre le mot entier faux.
+  5. **Norme du gradient.**
+     - La moyenne monte lentement, de 1,0 à environ 2,2.
+     - Il y a des pics isolés : 282 à l'époque 155, 44,5 à l'époque 73.
+     - Le clipping à 1 les absorbe : aucun effet visible sur les métriques.
+- **Bilan honnête :** un WER dev de 72,5 % est **moins bon** que l'estimation faite avant l'entraînement (30 à 60 %). Le pipeline fonctionne de bout en bout, mais le modèle ne généralise pas encore assez. **Le facteur limitant est la quantité de données**, pas le code.
+- **Figure :** `figures/courbes_s_200ep.png`, avec 4 graphiques : losses train/dev, WER/CER dev, learning rate et norme du gradient (échelle log).
+  - **Loss :** l'écart entre train et dev se creuse après l'époque 31. C'est la signature de l'overfitting.
+  - **WER / CER :** une chute rapide jusqu'à l'époque 25 environ, puis un plateau.
+  - **Learning rate :** la courbe est identique à celle prévue.
+  - **Gradient :** la moyenne monte de 1,1 à 2,3 et les pics grandissent. C'est un autre signe de mémorisation, absorbé par le clipping.
+
+## Synthèse — Sur quoi reposent les hyperparamètres de la référence (*baseline*)
+
+Les **paramètres** sont les 3,6 M de poids du modèle : ils sont **appris** par l'optimizer. Les **hyperparamètres** sont les réglages **choisis par nous** avant l'entraînement. Ce tableau rassemble chaque choix et sa justification, avec l'endroit où elle a été établie. La référence donne un **WER dev de 72,5 %** (époque 158).
+
+| Hyperparamètre | Valeur | Sur quoi on s'est basé | Où |
+|---|---|---|---|
+| Fréquence d'échantillonnage | 16 kHz | La voix utile est sous 8 kHz (Nyquist). C'est le standard STT, et celui de Whisper | EDA, prétraitement |
+| Log-Mel | fenêtre de 25 ms, pas de 10 ms, 80 bandes | Standard de la reconnaissance vocale, mêmes réglages que Whisper, ce qui rend la comparaison juste | Prétraitement |
+| Sous-échantillonnage | ÷ 4 (deux Conv2D à pas de 2) | Contrainte du CTC mesurée à l'EDA : au plus 22,6 instants nécessaires par seconde, pour 25 disponibles après ÷ 4. Le coût de l'attention est divisé par 16 | EDA, modèle bloc 1 |
+| Taille du modèle | « S » : `d_model` 144, **12 blocs**, 4 têtes, `d_ff` 576, soit 3,6 M de paramètres | Comparaison XS / S / M / L. Avec 19 h et 275 locuteurs, un modèle plus gros mémoriserait. Valeurs proches de Conformer-S. `d_ff` = 4 × `d_model` (ratio standard du Transformer) | Modèle complet (`stt/model.py`, valeurs par défaut de `SpeechTransformer`) |
+| Dropout | 0,1 | Valeur de l'article original du Transformer, choisie à cause du risque d'overfitting (275 locuteurs, EDA point 6) | Modèle bloc 3 |
+| Optimizer | AdamW | Standard pour entraîner un Transformer. *Weight decay* à 0,01 (valeur par défaut de PyTorch, **non réglée**) | Test d'overfitting |
+| Learning rate maximum | 1e‑3 | Le test d'overfitting a montré que le modèle apprend bien à cette valeur (loss de 6,4 à 0,02). Valeur **non réglée sur le dev** | Test d'overfitting |
+| Scheduler | Warmup de 5 % (≈ 10 époques), puis cosinus | Pic de gradient de 18,7 au départ (test d'overfitting). Durée totale connue. Standard actuel | Choix du scheduler |
+| Gradient clipping | norme maximale de 1 | Valeur courante. Absorbe les pics observés : 18,7 dans le test d'overfitting, jusqu'à 282 dans l'entraînement complet | Test d'overfitting |
+| Taille de batch | 32 | Mesure sur T4 : 1,7 Go utilisés sur 15 Go. Ça donne 406 itérations par époque | Mesure de vitesse |
+| Nombre d'époques | 200 | 1,4 min par époque mesurée, et le quota Kaggle n'était pas une contrainte. **Le résultat montre que 50 à 80 époques suffisent** : presque tout le gain arrive avant l'époque 50 | Mesure de vitesse, puis résultats |
+| Critère d'early stopping | Meilleur **WER** dev | C'est la métrique qui compte. Confirmé après coup : la loss dev était minimale à l'époque 31 (WER 80,9 %), alors que le meilleur WER est à l'époque 158 (72,5 %) | Boucle d'entraînement, puis résultats |
+
+**Ce qui n'a pas encore été réglé :** le learning rate, le dropout, le *weight decay* et la taille du modèle ont été fixés une seule fois, **sans comparaison sur le dev**. C'est l'objet de l'étape d'optimisation qui suit. Une seule modification par essai, comparée à cette référence.
+
+## 2026-11-02 — Optimisation, essai 1 : choix de SpecAugment
+
+**Point de départ (raisonnement) :**
+- **Problème mesuré sur la référence :** un overfitting fort. La loss dev remonte dès l'époque 31 (de 1,34 à 2,29), alors que la loss train descend à 0,11.
+- **Leviers envisagés :**
+  - A. SpecAugment ;
+  - B. plus de données ;
+  - C. un modèle de langue au décodage ;
+  - D. un dropout plus fort ;
+  - E. un modèle plus petit.
+- **Choix : SpecAugment.**
+  - C'est le levier standard de la reconnaissance vocale contre l'overfitting.
+  - Il ne change pas le modèle, seulement les données vues à l'entraînement.
+  - Il est peu coûteux à mettre en place.
+  - Plus de données (B) viendra une fois qu'on aura une recette qui généralise mieux. Le modèle de langue (C) corrigerait l'orthographe, mais pas ce que le modèle entend.
+- **Méthode :** une seule modification par essai par rapport à la référence. Le dropout reste à 0,1 (SpecAugment et dropout agissent à des endroits différents : l'entrée et l'intérieur du réseau, et ils se combinent dans les recettes professionnelles). Les essais seront plus courts (80 époques au lieu de 200), puisque la référence a montré que presque tout le gain arrive avant l'époque 50.
+
+**Décision 1 : écrire les masques nous-mêmes** plutôt qu'utiliser `torchaudio.transforms.FrequencyMasking` / `TimeMasking`.
+- torchaudio attend le format `(fréquences, temps)`, alors que nos features sont en `(temps, 80)`. Un transpose oublié masquerait les mauvais axes sans aucune erreur visible.
+- Le code fait une dizaine de lignes, toutes validables.
+- C'est cohérent avec le choix d'écrire l'attention nous-mêmes.
+
+**Décision 2 : des masques de taille « moyenne ».**
+- **Fréquences :** 2 masques de 0 à 27 bandes Mel chacun, sur 80. Valeur de la recette de référence (Park et al., 2019, *SpecAugment*, politique *LibriSpeech Double*).
+- **Temps :** 2 masques de 0 à 40 instants chacun (0,4 s), **et au plus 10 % de la durée du clip.**
+- **Options écartées :**
+  - **Léger** (1 masque de chaque type, plus petits) : effet probablement trop faible face à un overfitting aussi marqué.
+  - **Fort** (la recette originale, masques de temps jusqu'à 1 s) : elle a été conçue pour LibriSpeech, dont les clips durent 10 à 15 s. Sur nos clips de quelques secondes, deux masques d'1 s cacheraient jusqu'aux deux tiers du son.
+- **La valeur de masquage est 0.** Les features sont normalisées par bande (moyenne 0), donc 0 correspond à une valeur « neutre ».
+- **Appliqué au train seulement.** Le dev et le test restent intacts, pour mesurer le vrai modèle.
+
+- **Mise en œuvre et tests :**
+  - **Test sur Kaggle**, sur un faux log-Mel de 300 × 80 rempli de 1 :
+    - la forme est conservée et l'original reste intact ;
+    - la limite des masques de temps vaut 30 instants ;
+    - 25 bandes sur 80 sont effacées (maximum 54) et 44 instants sur 300 (maximum 60) ;
+    - l'image avant / après montre bien des bandes horizontales (fréquences) et verticales (temps).
+  - **Rangement :** la fonction est placée dans `stt/augment.py`. `CommonVoiceDataset` reçoit un interrupteur `augment=False`, que seul le train mettra à `True`.
+  - **Test sur PC, sur un vrai clip du dev** (472 instants) :
+    - sans augmentation, le résultat est identique à chaque appel ;
+    - avec augmentation, 34 instants et 21 bandes sont effacés, les masques changent d'un appel à l'autre, et la cible n'est pas modifiée.
+- **Notion ajoutée :** 25 (SpecAugment).

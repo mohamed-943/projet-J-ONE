@@ -827,3 +827,104 @@ def warmup_cosine(step, warmup_steps, total_steps):
 scheduler = torch.optim.lr_scheduler.LambdaLR(
     optimizer, lambda step: warmup_cosine(step, WARMUP_STEPS, TOTAL_STEPS))
 ```
+
+---
+
+## 24. Comment le modèle apprend : paramètres, gradient, backpropagation, AdamW
+
+**Explication.**
+- **Paramètres et hyperparamètres.**
+  - Les **paramètres** sont les nombres **à l'intérieur** du modèle : les poids des `Linear` et des convolutions. Notre modèle en a 3,6 millions. Au départ ils sont **aléatoires**, et c'est l'entraînement qui les ajuste.
+  - Les **hyperparamètres** sont **nos réglages** : learning rate, dropout, nombre de blocs, taille de batch, nombre d'époques… Le modèle ne les apprend pas. C'est nous qui les choisissons, et qui les comparons sur le dev.
+- **L'idée, sur un exemple à un seul poids.** Un « modèle » calcule `prédiction = w × x`. On a `w = 0,5`, une entrée `x = 2`, et la réponse attendue est 3.
+  1. **Forward :** la prédiction vaut 0,5 × 2 = 1.
+  2. **Loss :** on utilise l'erreur au carré, (1 − 3)² = **4**.
+  3. **Gradient :** la dérivée de la loss par rapport à w vaut 2 × (w·x − 3) × x = 2 × (1 − 3) × 2 = **−8**. Elle est négative : si on **augmente** w, la loss **baisse**.
+  4. **Pas de l'optimizer :** w ← w − learning rate × gradient = 0,5 − 0,1 × (−8) = **1,3**.
+  5. **Nouvelle prédiction :** 1,3 × 2 = 2,6. La loss vaut (2,6 − 3)² = **0,16**, au lieu de 4.
+
+  Le gradient indique **dans quel sens** bouger chaque poids, et le learning rate **de combien**.
+- **La backpropagation.** Dans notre modèle, la loss dépend des poids **à travers toutes les couches** : convolutions → blocs Transformer → output head → log_softmax → loss CTC. `loss.backward()` applique la **règle de la chaîne** (la dérivée d'une composition de fonctions) en partant de la loss et **en remontant** couche par couche. Il calcule ainsi les **3,6 millions de gradients en un seul passage**.
+- **AdamW.** Au lieu du pas simple `w − lr × gradient`, AdamW :
+  - garde une **moyenne des gradients récents** (le *momentum*), pour lisser le bruit d'un batch à l'autre ;
+  - divise par une moyenne des **gradients au carré**, ce qui donne à chaque poids **son propre pas** : petit pour les poids aux gradients très variables, plus grand pour les autres ;
+  - applique le **weight decay** (le « W » de AdamW) : chaque poids est légèrement rapproché de 0 à chaque pas, ce qui freine la mémorisation.
+- **La répétition.** Une itération correspond à un batch de 32 clips. Notre entraînement a fait 406 itérations × 200 époques = **81 200 pas**. Chaque clip a donc été vu 200 fois, et chaque poids a été corrigé 81 200 fois.
+
+**Où on l'a appliquée.** Dans la boucle d'entraînement (cellule 4 sur Kaggle, `stt_03_overfit_10_clips.ipynb`), avec `loss.backward()`, `clip_grad_norm_`, `optimizer.step()` et `scheduler.step()`.
+
+**Pourquoi.**
+- C'est le cœur de l'entraînement : sans ce mécanisme, les poids resteraient aléatoires. On le voit dans les chiffres :
+  - au départ, le modèle sort des lettres au hasard (loss de 3,33, CER de 77 %) ;
+  - après 81 200 pas, la loss train est à 0,11 et le CER dev à 28 %.
+- La loss train à 0,11 contre une loss dev à 2,29 montre la **limite** de ce mécanisme : il optimise **les exemples qu'il voit**. Si on le laisse faire sans frein, il finit par les **mémoriser**. D'où le besoin de régularisation (dropout, weight decay, SpecAugment).
+
+**Code** (boucle d'entraînement) :
+
+```python
+log_probs, out_lengths = model(features, feature_lengths)                          # 1. forward
+loss = ctc_loss(log_probs.transpose(0, 1), targets, out_lengths, target_lengths)  # 2. loss
+optimizer.zero_grad()                                                              #    on efface les anciens gradients
+loss.backward()                                                                    # 3. backpropagation : 3,6 M gradients
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)                  #    plafonne la taille du pas
+optimizer.step()                                                                   # 4. AdamW corrige chaque poids
+scheduler.step()                                                                   # 5. learning rate suivant
+```
+
+---
+
+## 25. SpecAugment : l'augmentation de données sur le log-Mel
+
+**Explication.** Pendant l'**entraînement seulement**, on efface au hasard des zones du log-Mel `(T, 80)` avant de le donner au modèle :
+- **Masques de fréquences :** des bandes Mel voisines, mises à 0 sur toute la durée. C'est comme un micro qui ne capte pas certains graves ou certains aigus. Sur l'image, ce sont des **bandes horizontales**.
+- **Masques de temps :** un court morceau du clip, mis à 0 sur toutes les fréquences. C'est comme une syllabe couverte par un bruit. Sur l'image, ce sont des **bandes verticales**.
+
+La largeur et la position de chaque masque sont **tirées au hasard à chaque appel**. En 80 ou 200 époques, le modèle ne voit donc jamais deux fois exactement le même exemple, et il ne peut plus apprendre par cœur. Il doit s'appuyer sur le **contexte** pour reconnaître un mot dont un morceau manque.
+
+Exemple : sur un clip de 3 s (300 instants), la limite des masques de temps est min(40, 10 % × 300) = **30 instants**. Un tirage a effacé les bandes 0 à 20 (les graves) et 4 bandes aiguës, soit 25 bandes, plus deux morceaux de 0,16 s et 0,28 s, soit 44 instants.
+
+La valeur 0 est « neutre » parce que les features sont **normalisées par bande** : 0 correspond à la moyenne de chaque bande. Le dev et le test ne sont **jamais** augmentés, puisqu'on veut mesurer le vrai modèle.
+
+**SpecAugment et dropout se combinent.** Le dropout efface 10 % des valeurs **à l'intérieur** du réseau. SpecAugment efface des morceaux **de l'entrée**. Les deux agissent à des endroits différents.
+
+**Où on l'a appliquée.**
+- La fonction `spec_augment` dans `stt/augment.py`.
+- Elle est appelée par `CommonVoiceDataset` quand `augment=True`, ce qui n'est le cas que pour le train.
+
+**Pourquoi.**
+- **L'overfitting mesuré sur la référence :** la loss dev remonte dès l'époque 31 (de 1,34 à 2,29), alors que la loss train descend à 0,11. Le gradient moyen monte aussi, de 1,1 à 2,3.
+- **Les réglages** (2 masques de fréquences ≤ 27 bandes, 2 masques de temps ≤ 40 instants et ≤ 10 % du clip) :
+  - les bandes viennent de la recette de référence (Park et al., 2019) ;
+  - les masques de temps sont réduits, parce que nos clips durent quelques secondes, contre 10 à 15 s pour LibriSpeech.
+- **Écrite nous-mêmes :** torchaudio attend un format `(fréquences, temps)`, inversé par rapport au nôtre.
+- **Tests :**
+  - sur un faux log-Mel, la forme est conservée, l'original reste intact et les limites sont respectées ;
+  - sur un vrai clip du dev (472 instants), 34 instants et 21 bandes sont effacés, les masques changent à chaque appel et la cible n'est pas modifiée.
+
+**Code** (`stt/augment.py`, puis `stt/dataset.py`) :
+
+```python
+def spec_augment(features, n_freq_masks=2, max_freq_width=27,
+                 n_time_masks=2, max_time_width=40, max_time_ratio=0.1):
+    features = features.clone()                       # copie : on ne modifie jamais l'original
+    n_frames, n_mels = features.shape                 # T instants, 80 bandes
+
+    # Masques de FRÉQUENCES : des bandes Mel voisines effacées sur toute la durée
+    for _ in range(n_freq_masks):
+        width = torch.randint(0, max_freq_width + 1, (1,)).item()   # largeur tirée entre 0 et 27 bandes
+        start = torch.randint(0, n_mels - width + 1, (1,)).item()   # position de départ tirée au hasard
+        features[:, start:start + width] = 0                         # tous les instants, ces bandes
+
+    # Masques de TEMPS : un court morceau du clip effacé sur toutes les fréquences
+    time_limit = min(max_time_width, int(max_time_ratio * n_frames))  # ≤ 0,4 s ET ≤ 10 % du clip
+    for _ in range(n_time_masks):
+        width = torch.randint(0, time_limit + 1, (1,)).item()
+        start = torch.randint(0, n_frames - width + 1, (1,)).item()
+        features[start:start + width, :] = 0                         # ces instants, toutes les bandes
+
+    return features
+
+# Dans CommonVoiceDataset.__getitem__ :
+        if self.augment:
+            features = spec_augment(features)                 # nouveaux masques à chaque appel
+```

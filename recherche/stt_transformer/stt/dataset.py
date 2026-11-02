@@ -5,6 +5,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
 from stt.audio import load_audio, log_mel
+from stt.augment import spec_augment
 from stt.text import normalize, is_valid, encode
 
 
@@ -27,9 +28,10 @@ def load_split(folders, split):
 
 
 class CommonVoiceDataset(Dataset):
-    def __init__(self, table):
+    def __init__(self, table, augment=False):
         # Appelé une fois, à la création : on mémorise le tableau des clips
         self.table = table
+        self.augment = augment          # True seulement pour le train (SpecAugment)
 
     def __len__(self):
         # Nombre de clips
@@ -39,6 +41,8 @@ class CommonVoiceDataset(Dataset):
         # Prétraite le clip n° i à la demande et renvoie (features, cible)
         row = self.table.iloc[i]
         features = log_mel(load_audio(row["audio_path"]))   # (instants, 80)
+        if self.augment:
+            features = spec_augment(features)                 # nouveaux masques à chaque appel
         target = encode(row["text"])                          # (nombre de caractères,)
         return features, target
 

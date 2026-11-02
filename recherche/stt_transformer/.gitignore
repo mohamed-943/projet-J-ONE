@@ -6,3 +6,6 @@ data/
 
 # Résultats d'exécution locaux (contiennent de vraies phrases Common Voice)
 resultats_*.ipynb
+
+# Poids et historiques des entraînements (téléchargés depuis Kaggle)
+runs/
