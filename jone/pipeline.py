@@ -76,14 +76,26 @@ class VoicePipeline:
         self._stop = threading.Event()
 
     def warmup(self) -> None:
-        """Premières inférences à vide de Whisper et de chaque voix : sans cela, le
-        premier échange paie plusieurs secondes d'initialisation."""
+        """Premières inférences à vide de Whisper, de chaque voix et du LLM : sans
+        cela, le premier échange paie plusieurs secondes d'initialisation."""
         if self.stt is not None and hasattr(self.stt, "warmup"):
             self.stt.warmup()
         t0 = time.perf_counter()
         for language in getattr(self.tts, "voices", {"fr": None}):
             self.tts.synthesize(WARMUP_TEXTS.get(language, "Ok."), language=language)
         log.info("Synthèse vocale préchauffée en %.1f s", time.perf_counter() - t0)
+        # Le LLM lit une fois le prompt système (1,6 s pour le LLM local sur la
+        # Jetson) ; les tours suivants réutilisent ce calcul. Un seul fragment suffit.
+        t0 = time.perf_counter()
+        stream = self.router.stream(self.system_prompt, [{"role": "user", "content": "Bonjour"}],
+                                    RouteInfo())
+        try:
+            next(stream, None)
+            log.info("LLM préchauffé en %.1f s", time.perf_counter() - t0)
+        except NoBackendAvailable as exc:
+            log.warning("Préchauffage du LLM impossible : %s", exc)
+        finally:
+            stream.close()
 
     # ------------------------------------------------------------------ boucle
     def run(self) -> None:

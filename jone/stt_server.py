@@ -143,8 +143,8 @@ class WhisperServerSTT:
         if self._process and self._process.poll() is None:
             self._process.terminate()
             try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
+                self._process.wait(timeout=3)
+            except (subprocess.TimeoutExpired, KeyboardInterrupt):  # 2e Ctrl+C : on force
                 self._process.kill()
 
     # --- transcription ------------------------------------------------------
