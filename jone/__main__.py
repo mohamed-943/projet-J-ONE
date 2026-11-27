@@ -124,6 +124,8 @@ def main(argv=None) -> int:
     pipeline = build_pipeline(cfg, text_mode=args.text)
 
     def shutdown(*_):
+        # Un second signal interromprait l'arrêt au milieu d'un verrou.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         pipeline.stop()
         raise KeyboardInterrupt
 
