@@ -66,7 +66,7 @@ dialogue:
 barge_in:                       # interrompre le robot pendant qu'il parle (jone/barge_in.py)
   enabled: true
   # Mots qui coupent la parole au robot, sauf s'il les prononce lui-même (écho)
-  keywords: [sarah, sara, stop, arrête, arrete, attends, attendez, tais-toi, silence,
+  keywords: [sibo, sibô, cibo, sybo, stop, arrête, arrete, attends, attendez, tais-toi, silence,
              excuse-moi, excusez-moi, pardon, wait, hold on, excuse me, shut up, enough]
   window_s: 1.4                 # audio transcrit à chaque vérification
   hop_s: 0.5                    # intervalle entre deux vérifications (latence d'interruption)
@@ -76,7 +76,7 @@ barge_in:                       # interrompre le robot pendant qu'il parle (jone
 
 wake_word:                      # question ouverte : mot d'éveil ou écoute continue
   enabled: false
-  words: ["sarah", "sara", "ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"]
+  words: ["sibo", "sibô", "cibo", "sybo", "siebo", "seebo", "si bo", "ultron", "j-one", "j one", "jone"]
   session_timeout_s: 30         # après un échange, pas besoin de répéter le mot
 
 llm:
@@ -107,10 +107,10 @@ llm:
     timeout_s: 20
 
 tts:                            # EF-08
-  voice_model: voices/fr_FR-siwis-medium.onnx   # voix de la langue par défaut
+  voice_model: voices/fr_FR-tom-medium.onnx   # voix de la langue par défaut
   default_language: fr
   voices:                       # une voix par langue supplémentaire
-    en: voices/en_US-lessac-medium.onnx
+    en: voices/en_US-ryan-medium.onnx
   length_scale: 1.0             # > 1 : voix plus lente
   use_cuda: false
 

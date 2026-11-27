@@ -5,7 +5,7 @@ Ce protocole mesure quatre indicateurs sur le robot, avec ses micros et sa confi
 | Indicateur | Ce qu'il mesure | Outil |
 |---|---|---|
 | WER | qualité de la transcription | `tools/evaluation.py` |
-| Recognition Accuracy | reconnaissance des commandes adressées à Sarah | `tools/evaluation.py` |
+| Recognition Accuracy | reconnaissance des commandes adressées à Sibo | `tools/evaluation.py` |
 | Latency | rapidité, de la fin de parole au premier son | journal des échanges + `tools/evaluation.py` |
 | FAR / FRR | fiabilité de la détection vocale (parole et mot d'éveil) | `tools/evaluation.py` |
 
@@ -18,8 +18,8 @@ Le corpus suit `tests/protocole_evaluation.tsv`. Il comporte 56 enregistrements 
 | Type | Nombre | Contenu | Sert à |
 |---|---|---|---|
 | `phrase` | 22 (12 fr, 10 en) | questions et affirmations courantes | WER, FRR parole, langue |
-| `commande` | 16 (8 fr, 8 en) | « Sarah, … » suivi d'une consigne, avec ses mots-clés | WER, Recognition Accuracy, FRR mot d'éveil |
-| `hors_cible` | 10 (5 fr, 5 en) | parole entre personnes, sans « Sarah » | WER, FAR mot d'éveil |
+| `commande` | 16 (8 fr, 8 en) | « Sibo, … » suivi d'une consigne, avec ses mots-clés | WER, Recognition Accuracy, FRR mot d'éveil |
+| `hors_cible` | 10 (5 fr, 5 en) | parole entre personnes, sans « Sibo » | WER, FAR mot d'éveil |
 | `bruit` | 8 | silence, pas, porte, clavier, applaudissements, chute d'objet, musique, robot debout | FAR parole, FAR mot d'éveil |
 
 Conditions d'enregistrement, à noter dans le rapport :
@@ -54,7 +54,7 @@ Une commande est reconnue si (1) le mot d'éveil est détecté dans une transcri
 | Niveau | FAR (False Acceptance Rate) | FRR (False Rejection Rate) |
 |---|---|---|
 | Parole (VAD + filtre) | bruits qui auraient déclenché une réponse / bruits | enregistrements parlés sans aucun énoncé accepté / enregistrements parlés |
-| Mot d'éveil | `hors_cible` et bruits acceptés par le mot d'éveil / (`hors_cible` + bruits) | commandes où « Sarah » n'est pas reconnu / commandes |
+| Mot d'éveil | `hors_cible` et bruits acceptés par le mot d'éveil / (`hors_cible` + bruits) | commandes où « Sibo » n'est pas reconnu / commandes |
 
 Chaque proportion est donnée avec son intervalle de confiance de Wilson à 95 %. Avec 8 bruits, un FAR de 0/8 laisse un intervalle de 0 à 32 % : il faut augmenter le nombre de bruits pour conclure finement.
 

@@ -12,12 +12,12 @@ p14	phrase	en	What can you do exactly?
 p16	phrase	en	What is the capital of Australia?
 p19	phrase	en	I would like to know who built you.
 p22	phrase	en	What is the difference between a robot and artificial intelligence?
-c01	commande	fr	Sarah, présente-toi.	présente
-c03	commande	fr	Sarah, parle plus fort.	fort
-c05	commande	fr	Sarah, arrête de parler.	arrête
-c07	commande	fr	Sarah, parle en anglais.	anglais
-c09	commande	en	Sarah, introduce yourself.	introduce
-c11	commande	en	Sarah, speak louder.	louder
-c13	commande	en	Sarah, stop talking.	stop
-c15	commande	en	Sarah, speak French.	french
+c01	commande	fr	Sibo, présente-toi.	présente
+c03	commande	fr	Sibo, parle plus fort.	fort
+c05	commande	fr	Sibo, arrête de parler.	arrête
+c07	commande	fr	Sibo, parle en anglais.	anglais
+c09	commande	en	Sibo, introduce yourself.	introduce
+c11	commande	en	Sibo, speak louder.	louder
+c13	commande	en	Sibo, stop talking.	stop
+c15	commande	en	Sibo, speak French.	french
 b01	bruit	-	Silence de la pièce : ne rien dire.

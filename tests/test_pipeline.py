@@ -208,7 +208,7 @@ def test_english_hallucinations_filtered():
 
 def test_voice_follows_reply_language():
     # Question en anglais, mais le LLM local répond en français : voix française.
-    local = FakeBackend("local", "Je suis Sarah. Je suis là pour vous aider.")
+    local = FakeBackend("local", "Je suis Sibo. Je suis là pour vous aider.")
     p, _, log, tts = make_pipeline(local=local)
     p.respond("Who are you?", language="en")
     assert tts.languages == ["fr", "fr"]

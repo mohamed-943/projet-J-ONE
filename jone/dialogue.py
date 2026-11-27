@@ -34,7 +34,7 @@ _EXCLUDE = {"pas", "not", "dont", "autre", "autres", "other", "langue", "langues
 # Mots de politesse, ignorés pour juger qu'une phrase courte est une simple demande
 # (« En français s'il te plaît »).
 _POLITE = {"s", "il", "te", "vous", "plait", "please", "stp", "svp", "si", "possible", "merci",
-           "thanks", "sarah", "maintenant", "now", "ok", "okay", "d", "accord", "oui", "yes"}
+           "thanks", "sibo", "maintenant", "now", "ok", "okay", "d", "accord", "oui", "yes"}
 _WORD = re.compile(r"[a-z]+")  # « l'anglais » → l, anglais
 MAX_WORDS = 12
 

@@ -21,8 +21,8 @@ def test_rejects_non_verbal_annotations_and_keeps_words_around_them():
     # vus sur le robot : « *cris* » envoyé au LLM
     for text in ("*cris*", "[Musique]", "(rires)", "*applaudissements* ♪"):
         assert check(text, avg_logprob=-0.3).reason == "son non verbal", text
-    r = check("*rires* Bonjour Sarah", avg_logprob=-0.3)
-    assert r.accepted and r.text == "Bonjour Sarah"
+    r = check("*rires* Bonjour Sibo", avg_logprob=-0.3)
+    assert r.accepted and r.text == "Bonjour Sibo"
 
 
 def test_rejects_multi_voice_dialogue():

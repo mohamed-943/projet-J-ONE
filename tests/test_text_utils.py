@@ -54,7 +54,7 @@ def test_think_stripper_passthrough():
 
 def test_splitter_first_clause_starts_early():
     s = SentenceSplitter(first_clause_chars=20)
-    assert s.feed("Bonjour, je suis Sarah, ") == ["Bonjour, je suis Sarah,"]
+    assert s.feed("Bonjour, je suis Sibo, ") == ["Bonjour, je suis Sibo,"]
     # seul le premier morceau est coupé à la virgule
     assert s.feed("un robot, très curieuse, ") == []
     assert s.feed("vraiment. Fin") == ["un robot, très curieuse, vraiment."]

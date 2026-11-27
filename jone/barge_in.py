@@ -5,7 +5,7 @@ entend aussi la voix du robot. Le détecteur écoute donc en parallèle de la le
 transcrit de courtes fenêtres d'audio quand le VAD y entend de la parole, et ne
 coupe la parole que si la transcription ne ressemble pas à ce que le robot dit :
 
-- un mot d'interruption (« Sarah », « stop », « arrête », « attends », « wait »…)
+- un mot d'interruption (« Sibo », « stop », « arrête », « attends », « wait »…)
   absent de la réponse en cours ;
 - ou au moins `min_new_words` mots absents de la réponse, avec une confiance
   suffisante.
@@ -30,7 +30,7 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 DEFAULT_KEYWORDS = (
-    "sarah", "sara", "stop", "arrête", "arrete", "attends", "attendez", "tais-toi", "silence",
+    "sibo", "sibô", "cibo", "sybo", "stop", "arrête", "arrete", "attends", "attendez", "tais-toi", "silence",
     "excuse-moi", "excusez-moi", "pardon", "wait", "hold on", "excuse me", "shut up", "enough",
 )
 _WORD = re.compile(r"[a-z0-9]+")
@@ -53,7 +53,7 @@ def is_interruption(heard: str, avg_logprob: float, robot_text: str, keywords=DE
     for kw in keywords:
         kw_words = words(kw)
         if not kw_words or all(w in robot for w in kw_words):
-            continue  # le robot dit lui-même ce mot (« Je suis Sarah ») : écho possible
+            continue  # le robot dit lui-même ce mot (« Je suis Sibo ») : écho possible
         if re.search(r"\b" + re.escape(" ".join(kw_words)) + r"\b", heard_folded):
             return f"mot « {kw} »"
     new = [w for w in words(heard) if w not in robot and len(w) > 2]

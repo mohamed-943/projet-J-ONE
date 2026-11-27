@@ -6,19 +6,19 @@ from jone.audio_output import NullSpeaker
 from jone.barge_in import BargeInMonitor, echo_ratio, is_interruption
 from jone.stt import Transcription
 
-ROBOT = "Bonjour, je suis Sarah, le robot de l'équipe. Je peux discuter avec vous."
+ROBOT = "Bonjour, je suis Sibo, le robot de l'équipe. Je peux discuter avec vous."
 
 
 def test_echo_of_robot_voice_is_not_an_interruption():
-    assert is_interruption("je suis Sarah, le robot de l'équipe", -0.3, ROBOT) is None
-    # « Sarah » est dit par le robot lui-même : seul, il ne suffit pas
-    assert is_interruption("Sarah", -0.2, ROBOT) is None
+    assert is_interruption("je suis Sibo, le robot de l'équipe", -0.3, ROBOT) is None
+    # « Sibo » est dit par le robot lui-même : seul, il ne suffit pas
+    assert is_interruption("Sibo", -0.2, ROBOT) is None
 
 
 def test_keywords_and_new_words_interrupt():
     assert is_interruption("Stop, stop !", -0.4, ROBOT) == "mot « stop »"
     assert is_interruption("attends une seconde", -0.4, ROBOT).startswith("mot")
-    assert is_interruption("Sarah, quelle heure est-il ?", -0.3, "Il fait beau aujourd'hui.") == "mot « sarah »"
+    assert is_interruption("Sibo, quelle heure est-il ?", -0.3, "Il fait beau aujourd'hui.") == "mot « sibo »"
     assert is_interruption("quelle heure est-il maintenant", -0.3, ROBOT) == "4 mots nouveaux"
     # mots nouveaux mais confiance trop faible : bruit probable
     assert is_interruption("quelle heure est-il maintenant", -1.3, ROBOT) is None
@@ -82,7 +82,7 @@ def test_pipeline_stops_speaking_when_interrupted():
     log = MemoryLog()
     p = VoicePipeline(
         router=LLMRouter(FakeBackend("local", "Un. Deux. Trois."), None), conversation=Conversation(5),
-        system_prompt="Tu es Sarah.", tts=LongTTS(), speaker=NullSpeaker(), led=RecordingLed(),
+        system_prompt="Tu es Sibo.", tts=LongTTS(), speaker=NullSpeaker(), led=RecordingLed(),
         exchange_log=log, tail_margin_s=0, error_hold_s=0, mic=mic,
         barge_in=BargeInMonitor(mic, lambda f: 1.0, stt, window_s=0.1, hop_s=0.05),
     )

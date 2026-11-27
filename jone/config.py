@@ -75,7 +75,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "barge_in": {
         "enabled": True,  # l'utilisateur peut couper la parole au robot
-        "keywords": ["sarah", "sara", "stop", "arrête", "arrete", "attends", "attendez",
+        "keywords": ["sibo", "sibô", "cibo", "sybo", "stop", "arrête", "arrete", "attends", "attendez",
                      "tais-toi", "silence", "excuse-moi", "excusez-moi", "pardon", "wait",
                      "hold on", "excuse me", "shut up", "enough"],
         "window_s": 1.4,  # audio transcrit à chaque vérification
@@ -86,7 +86,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "wake_word": {
         "enabled": False,
-        "words": ["sarah", "sara", "ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"],
+        "words": ["sibo", "sibô", "cibo", "sybo", "siebo", "seebo", "si bo", "ultron", "j-one", "j one", "jone"],
         "session_timeout_s": 30.0,
     },
     "llm": {
@@ -120,9 +120,9 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "tts": {
-        "voice_model": "voices/fr_FR-siwis-medium.onnx",  # voix de la langue par défaut
+        "voice_model": "voices/fr_FR-tom-medium.onnx",  # voix de la langue par défaut
         "default_language": "fr",
-        "voices": {"en": "voices/en_US-lessac-medium.onnx"},
+        "voices": {"en": "voices/en_US-ryan-medium.onnx"},
         "length_scale": 1.0,
         "use_cuda": False,
     },

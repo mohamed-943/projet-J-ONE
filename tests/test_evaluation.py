@@ -11,14 +11,14 @@ def test_protocol_file_is_valid():
     assert types == {"phrase", "commande", "hors_cible", "bruit"}
     assert len({i.id for i in items}) == len(items)
     commands = [i for i in items if i.type == "commande"]
-    assert all(i.texte.lower().startswith("sarah") and i.mots_cles for i in commands)
+    assert all(i.texte.lower().startswith("sibo") and i.mots_cles for i in commands)
     assert {i.langue for i in items if i.is_speech} == {"fr", "en"}
 
 
 def test_keywords_ignore_case_and_accents():
-    assert keywords_found("Sarah, qui t'a CRÉÉE ?", ["cré"])
-    assert keywords_found("Sarah, repete s'il te plait", ["répète"])
-    assert not keywords_found("Sarah, parle plus vite", ["fort"])
+    assert keywords_found("Sibo, qui t'a CRÉÉ ?", ["cré"])
+    assert keywords_found("Sibo, repete s'il te plait", ["répète"])
+    assert not keywords_found("Sibo, parle plus vite", ["fort"])
 
 
 def test_wilson_interval():
@@ -30,10 +30,10 @@ def test_wilson_interval():
 def test_metrics_far_frr_and_accuracy():
     phrase = ItemResult(Item("p1", "phrase", "fr", "bonjour à tous"), transcription="bonjour a tous",
                         accepted="bonjour a tous", language="fr")
-    cmd_ok = ItemResult(Item("c1", "commande", "fr", "Sarah, parle plus fort.", ["fort"]),
-                        transcription="Sarah, parle plus fort.", accepted="Sarah, parle plus fort.",
+    cmd_ok = ItemResult(Item("c1", "commande", "fr", "Sibo, parle plus fort.", ["fort"]),
+                        transcription="Sibo, parle plus fort.", accepted="Sibo, parle plus fort.",
                         wake=True, language="fr")
-    cmd_missed = ItemResult(Item("c2", "commande", "en", "Sarah, stop talking.", ["stop"]),
+    cmd_missed = ItemResult(Item("c2", "commande", "en", "Sibo, stop talking.", ["stop"]),
                             transcription="Sara stop talking", accepted="", language="en")
     off_target = ItemResult(Item("h1", "hors_cible", "fr", "on mange où"), transcription="on mange où",
                             accepted="on mange où", language="fr")

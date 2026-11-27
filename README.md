@@ -29,7 +29,7 @@ jone/
   llm/local.py      Qwen3 4B via Ollama (secours)
   llm/router.py     bascule automatique cloud → local (EF-07, ENF-04)
   text_utils.py     découpage en phrases pour le streaming, nettoyage pour l'oral (EF-06)
-  tts.py            Piper, voix fr_FR-siwis (EF-08)
+  tts.py            Piper, voix fr_FR-tom (EF-08)
   audio_utils.py    conversion en PCM 16 kHz mono 16 bits (EF-09)
   audio_output.py   PlayStream() sur le G1, ou haut-parleur du PC (EF-10)
   led.py            LedControl() selon l'état (EF-11)

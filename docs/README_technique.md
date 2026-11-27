@@ -241,7 +241,7 @@ Le journal note `langue_conversation`, `incertain`, et dans `llm` : `commande_la
 Pendant une réponse, le micro reste ouvert : `BargeInMonitor` lit les trames dans son propre fil, avec son propre VAD. Quand au moins `min_speech_ratio` de la fenêtre (`window_s`, 1,4 s) est de la parole, il la transcrit toutes les `hop_s` (0,5 s), dans la langue de la conversation (énoncé court : une requête, environ 0,3 s sur le GPU).
 
 Le micro du G1 entend aussi la voix du robot. `is_interruption` compare donc la transcription à la réponse en cours. Il y a interruption si :
-- un mot de `barge_in.keywords` (« Sarah », « stop », « arrête », « attends », « wait »…) est entendu sans figurer dans la réponse ;
+- un mot de `barge_in.keywords` (« Sibo », « stop », « arrête », « attends », « wait »…) est entendu sans figurer dans la réponse ;
 - ou au moins `min_new_words` mots de plus de 2 lettres absents de la réponse sont entendus, avec `avg_logprob ≥ min_logprob`.
 
 Le reste est traité comme de l'écho. Sur interruption :

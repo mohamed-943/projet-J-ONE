@@ -1,5 +1,5 @@
-"""Synthèse vocale avec Piper (EF-08) : voix fr_FR-siwis pour le français,
-en_US-lessac pour l'anglais. `MultiVoiceTTS` choisit la voix selon la langue
+"""Synthèse vocale avec Piper (EF-08) : voix fr_FR-tom pour le français,
+en_US-ryan pour l'anglais. `MultiVoiceTTS` choisit la voix selon la langue
 détectée chez l'interlocuteur.
 
 Sortie toujours convertie en PCM 16 kHz mono 16 bits (EF-09) : les voix « medium »

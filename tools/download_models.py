@@ -1,4 +1,4 @@
-"""Télécharge les voix Piper (français fr_FR-siwis, anglais en_US-lessac) et
+"""Télécharge les voix Piper (voix d'homme : français fr_FR-tom, anglais en_US-ryan) et
 rappelle les autres modèles à installer.
 
     python tools/download_models.py [--quality medium|low] [--langs fr en]
@@ -18,8 +18,8 @@ from _bootstrap import ROOT
 
 BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 VOICES = {  # langue : (dossier sur Hugging Face, nom de la voix)
-    "fr": ("fr/fr_FR/siwis", "fr_FR-siwis"),
-    "en": ("en/en_US/lessac", "en_US-lessac"),
+    "fr": ("fr/fr_FR/tom", "fr_FR-tom"),
+    "en": ("en/en_US/ryan", "en_US-ryan"),
 }
 
 
