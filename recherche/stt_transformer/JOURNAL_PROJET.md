@@ -557,3 +557,254 @@ Les **paramètres** sont les 3,6 M de poids du modèle : ils sont **appris** par
     - sans augmentation, le résultat est identique à chaque appel ;
     - avec augmentation, 34 instants et 21 bandes sont effacés, les masques changent d'un appel à l'autre, et la cible n'est pas modifiée.
 - **Notion ajoutée :** 25 (SpecAugment).
+
+## 2026-11-02 — Résultats de l'essai 1 : SpecAugment, 80 époques (Kaggle T4)
+
+- **Réglages :** identiques à la référence (modèle S, dropout 0,1, AdamW, learning rate maximum 1e‑3, warmup de 5 % puis cosinus, batch de 32), **avec une seule différence : SpecAugment sur le train**, et 80 époques au lieu de 200.
+- **Incident au premier lancement :** `RuntimeError: Parent directory … does not exist` au moment de sauvegarder `best.pt`. La cellule 3 ne contenait pas `os.makedirs(OUT_DIR, exist_ok=True)`, et `torch.save` ne crée pas les dossiers. L'époque 1 s'était terminée en 1,4 min : SpecAugment ne ralentit pas l'entraînement. Corrigé, puis relancé.
+- **Durée :** 1,4 min par époque, soit **1 h 52** au total.
+
+| Époque | Loss train | Loss dev | WER dev | CER dev | Learning rate | Remarque |
+|---|---|---|---|---|---|---|
+| 1 | 3,22 | 2,74 | 101,6 % | 74,7 % | 2,5e‑4 | Début du warmup |
+| 10 | 2,02 | 1,71 | 94,6 % | 44,2 % | 9,8e‑4 | |
+| 20 | 1,69 | 1,39 | 85,3 % | 36,7 % | 8,9e‑4 | |
+| 50 | 1,20 | 1,10 | 74,3 % | 27,8 % | 3,4e‑4 | |
+| 60 | 1,10 | **1,077** | 72,1 % | 26,6 % | 1,6e‑4 | **Loss dev minimale** |
+| **79** | 1,03 | 1,08 | **70,8 %** | **26,1 %** | 4,3e‑7 | **Meilleur WER dev → `best.pt`** |
+| 80 | 1,03 | 1,08 | 70,9 % | 26,1 % | 0 | Fin |
+
+**Comparaison avec la référence :**
+
+| Mesure | Référence (200 ép.) | SpecAugment (80 ép.) |
+|---|---|---|
+| Meilleur WER dev | 72,5 % (ép. 158) | **70,8 %** (ép. 79), soit −1,7 point |
+| CER dev | 28,0 % | **26,1 %**, soit −1,9 point |
+| Loss dev minimale | 1,336 (ép. 31) | **1,077** (ép. 60) |
+| Loss train / dev en fin d'entraînement | 0,11 / 2,29 | 1,03 / 1,08 |
+| Pic de la norme du gradient | 282 | 25 |
+| Durée | 4 h 43 | 1 h 52 |
+
+**Analyse (raisonnement) :**
+1. **L'overfitting a disparu. C'est le résultat principal.**
+   - Les deux losses restent collées jusqu'à la fin (1,03 contre 1,08), et la loss dev ne remonte plus. Dans la référence, l'écart se creusait jusqu'à 0,11 contre 2,29.
+   - Le gradient est aussi plus calme : un pic maximum de 25, contre 282.
+   - **Pourquoi la loss train est-elle plus haute qu'avant (1,03 contre 0,11), alors que le modèle est meilleur ?**
+     - Le modèle ne peut plus apprendre les phrases par cœur : les masques changent à chaque époque, donc il ne revoit jamais exactement le même exemple.
+     - La loss train est mesurée sur des spectrogrammes **masqués**, donc plus difficiles que les vrais.
+     - Les deux nombres ne se comparent donc pas. Seul le dev (non masqué) permet de comparer les deux modèles.
+2. **Le WER s'améliore, mais modestement.**
+   - Le gain est de 1,7 point, en 2,5 fois moins de temps, et le CER confirme la tendance.
+   - **Limite :** un seul entraînement, sur un dev de 484 clips. D'un lancement à l'autre, le WER peut varier d'environ ±1 point. Le gain est probable, mais pas spectaculaire.
+   - 70,8 % reste **inutilisable** pour le robot (objectif : moins de 20 %).
+3. **Le diagnostic a changé : on passe de l'overfitting au sous-apprentissage (*underfitting*).**
+   - **Avant**, le modèle avait trop de capacité pour 19 h de données : il **mémorisait**.
+   - **Maintenant**, il ne mémorise plus, mais il **plafonne**. En fin d'entraînement, le WER baissait encore légèrement, alors que le learning rate était déjà tombé à 0.
+   - Le facteur limitant est désormais la **quantité d'exemples**, et peut-être la **capacité** du modèle. Ce n'est plus la régularisation.
+4. **Les erreurs restent surtout orthographiques.** Les noms propres et les mots rares sont écrits « à l'oreille » : le son est presque juste, mais pas l'orthographe. C'est toujours l'absence de modèle de langue.
+
+- **Figure :** `figures/courbes_s_specaug_80ep.png`, avec la même disposition que la référence et une ligne pointillée à 72,5 % pour comparer. Elle est tracée à partir du log de l'entraînement.
+
+**Options pour la suite :**
+- **A. Grand dataset**, en gardant SpecAugment.
+  - Avantages : c'est le levier n°1 identifié depuis la référence, et le modèle a maintenant la marge pour apprendre davantage.
+  - Inconvénients : il faut refaire l'EDA, et les époques seront beaucoup plus longues.
+- **B. Entraîner plus longtemps** (150 à 200 époques).
+  - Avantage : aucun code à écrire.
+  - Inconvénients : un gain probablement faible, pour environ 4 h 40 de quota GPU.
+- **C. Un modèle plus gros**, c'est-à-dire avec plus de **paramètres** (de poids) : `d_model` plus large ou plus de blocs.
+  - Avantage : il profiterait de la marge gagnée contre l'overfitting.
+  - Inconvénient : sur 19 h de données, l'overfitting risque de revenir.
+- **D. Un modèle de langue au décodage.**
+  - Avantage : il vise directement l'écart entre le WER et le CER.
+  - Inconvénients : une notion nouvelle, et du travail en plus.
+
+**Décision : A, le grand dataset (*Scripted Speech 27.0* FR, 28,5 Go), avec SpecAugment.**
+- Le modèle ne mémorise plus : il est prêt à profiter de plus de données.
+- **Préalable : refaire toute l'EDA sur le grand dataset.** Toutes nos décisions de données (vocabulaire, durées, contrainte du CTC, locuteurs) reposent sur l'EDA du petit dataset, et le nombre exact d'heures et de clips n'est pas connu avec certitude. Il faut le mesurer avant de choisir quoi que ce soit.
+- L'option C (modèle plus gros) sera reconsidérée une fois le grand dataset en place : avec beaucoup plus d'heures, un modèle plus gros devient raisonnable.
+- **Notion ajoutée :** 26 (sur-apprentissage et sous-apprentissage).
+
+## 2026-11-10 — EDA du grand dataset (*Scripted Speech 27.0* FR) et choix des données
+
+**Contexte :** avant d'entraîner sur le grand dataset (décision A ci-dessus), on mesure tout ce sur quoi reposent nos choix de données. Le notebook est `stt_05_eda_grand_dataset.ipynb`. Il a été lancé sur Kaggle (« Save & Run All », 24,6 min) et a produit un résumé chiffré (`eda_grand_dataset.json`, qui ne contient aucune phrase) et l'histogramme des durées.
+- **Incident :** une première version a échoué. Le Secret n'était pas coché, et son nom était en minuscules : la cellule 2 accepte maintenant `MDC_API_KEY` et `mdc_api_key`. Ensuite, il a fallu **accepter les conditions du dataset sur le site de MDC**, avec le même compte que la clé (sinon : `PermissionError: Terms must be accepted`).
+- **Remarque :** cette version a tourné avec un GPU T4 x2 alors que l'EDA n'en a pas besoin. Pour les prochaines EDA : *Accelerator → None*.
+
+**Résultats et décisions, point par point :**
+
+| Point | Mesure | Décision |
+|---|---|---|
+| 0. Coût d'une session | Archive de 30,65 Go : 12 min de téléchargement et 10,5 min de décompression. 869 961 mp3 (= validated + other + invalidated, exactement) | **Environ 22 min perdues au début de chaque session.** On ne peut pas les éviter : les conditions MDC interdisent d'enregistrer les données en dataset Kaggle. C'est acceptable sur une session de 12 h |
+| 1. Lecture des `.tsv` | 0 phrase manquante. Lecture par défaut et `QUOTE_NONE` : le même nombre de lignes pour le train (621 982) | `load_split` **ne change pas** |
+| 3–4. Heures et durées | Train : **893,8 h** (621 982 clips), soit 47 fois le petit dataset. Dev : 26,3 h (16 207 clips). Test : 26,5 h (16 207 clips). Médiane : 5,1 s ; 99 % sous 9,2 s ; maximum 17,9 s | **Aucun filtre de durée.** 17,9 s donnent 447 instants après ÷ 4 : l'attention le supporte sans problème |
+| 2. Vocabulaire | 1,55 % des phrases du train sont écartées (environ 14 h), contre 1,4 % sur le petit dataset. Les caractères hors vocabulaire sont surtout des lettres étrangères (noms propres), plus `&`, `=` et les guillemets `“ ”` | **On garde les 49 caractères.** Option facultative (gain d'environ 0,1 %) : remplacer `&` par « et » et retirer `“ ”` |
+| 5. Contrainte du CTC | 64 clips du train « impossibles » avec ÷ 4 (jusqu'à 197 caractères par seconde : des transcriptions fausses), et 49 clips suspects (moins de 2 caractères par seconde) | **On garde ÷ 4 et on retire ces 113 clips** (0,02 %) |
+| 6. Locuteurs | **10 295 voix** (contre 275). Le top 10 représente 23,1 % des clips (contre 44 à 54 %) | Une diversité bien meilleure. Pas de plafond par locuteur pour l'instant |
+| 7a. Recouvrement interne | 0 locuteur du dev ni du test dans le train. Réserve (`validated` sans les locuteurs ni les phrases du dev et du test) : 996 h, soit seulement **102 h de plus** que le train, avec **les mêmes locuteurs** (10 294). `validated` contient 14 851 clips suspects, contre 49 dans le train | Le découpage officiel est propre. La réserve n'est **pas retenue** |
+| 7b. Recouvrement avec nos données | 0 clip et 0 locuteur de notre **ancien dev** dans le grand train. **1 clip** (et 1 locuteur) de notre ancien test dans le grand train | L'ancien dev reste utilisable pour comparer aux 72,5 % et 70,8 %. Ce clip sera retiré de l'ancien test lors de l'évaluation finale |
+| 4. Lecture audio | 48 kHz, 32 kHz et 44,1 kHz (comme avant). Lecture + log-Mel : **9,4 ms par clip**, soit environ 24 min par époque avec 4 workers | **Le CPU ne sera pas le goulot.** On estime environ 1 h de GPU par époque (extrapolation de 1,4 min pour 12 982 clips) |
+
+**Pourquoi la réserve n'apporterait presque rien (raisonnement) :**
+- **Les mêmes voix :** ce qui aide à généraliser vers des locuteurs inconnus, c'est la *variété* (voix, accents, micros), pas plus d'enregistrements des mêmes personnes.
+- **Souvent les mêmes phrases :** Common Voice limite le nombre d'enregistrements d'une même phrase dans le train officiel. Réentendre la même phrase par la même voix pousse à mémoriser (overfitting).
+- **Moins propre :** une partie des clips en plus a été écartée par Common Voice (14 851 clips suspects dans `validated`, contre 49 dans le train).
+
+**Point important pour l'entraînement :** une époque du grand train compte autant de mises à jour des poids qu'environ **48 époques du petit**. On raisonnera donc en *steps* (nombre de mises à jour), pas en époques, pour le warmup, le scheduler et la durée d'entraînement.
+
+**Options présentées :**
+- Données d'entraînement :
+  - **A.** Le train officiel entier (894 h) ;
+  - **B.** Un sous-ensemble de 100 à 200 h, pour des essais rapides ;
+  - **C.** La réserve (996 h).
+- Évaluation :
+  - **a.** Notre ancien dev (comparable à nos résultats précédents, mais petit) ;
+  - **b.** Le dev officiel (26 h, 3 275 voix, bien plus fiable) ;
+  - **c.** Les deux.
+
+**Décisions : A, le train officiel entier, et b, le dev officiel.**
+- **A :** le maximum de données propres, avec le découpage standard. Le résultat sera donc comparable aux publications.
+- **b :** 16 207 clips et 3 275 voix, contre 484 clips. Le WER mesuré sera beaucoup plus fiable, car la variation d'environ ±1 point d'un lancement à l'autre sur un petit dev devient négligeable. Le coût reste modéré : l'évaluation ne fait que le forward, sur environ 2,6 % de la taille du train.
+- **Conséquence :** les nouveaux WER ne seront pas directement comparables à 72,5 % et 70,8 %, mesurés sur un autre dev. Si une comparaison est nécessaire pour le rapport, on pourra évaluer **une seule fois** le meilleur modèle sur l'ancien dev, qui n'a aucun recouvrement avec le grand train.
+- **Prochaine étape :** adapter le code d'entraînement : lecture des découpages officiels, retrait des 113 clips CTC, warmup et scheduler exprimés en steps, sauvegardes au cours d'une époque (une époque dure environ 1 h).
+
+## 2026-11-10 — Mesure de vitesse sur le grand dataset et réglages de l'entraînement
+
+**Choix de la durée :** pour l'entraînement sur le grand dataset, trois options ont été présentées : 3 époques (environ 3 h), 8 époques (environ 8 h) et 20 époques (environ 20 h). **Décision : l'option 3, 20 époques.** C'est le meilleur résultat possible pour le modèle S, et c'est plus proche de ce qui se fait sur environ 1 000 h de parole.
+- **Préalable :** l'estimation « environ 1 h par époque » était une extrapolation depuis le petit dataset. Comme le scheduler cosinus doit connaître le nombre total de steps dès le départ, on a d'abord **mesuré** le vrai temps par step.
+
+**La mesure :** notebook `stt_06_mesure_vitesse_grand_dataset.ipynb`, sur Kaggle (GPU T4, 25,9 min de session). On fait 300 steps sans changer aucun réglage de l'essai 1, puis une évaluation du dev officiel complet.
+- Chaque step est chronométré en deux parties :
+  - **l'attente des données**, c'est-à-dire le temps des workers CPU (lecture des mp3 + log-Mel) ;
+  - **le calcul**, sur le GPU.
+- Les 20 premiers steps ne sont pas comptés : les workers démarrent et le GPU s'initialise.
+- **Piège :** le GPU travaille en asynchrone. Sans `torch.cuda.synchronize()`, le chronomètre ne mesurerait que le temps d'*envoyer* les ordres au GPU, pas celui du calcul.
+
+| Mesure | Valeur | Conséquence |
+|---|---|---|
+| Clips gardés par `load_split` | 612 311 (train), 15 944 (dev) | 19 135 steps par époque (batch de 32) |
+| Temps par step | **0,1925 s** : 0,010 s d'attente des données + 0,182 s de calcul | **1,02 h par époque.** L'estimation est confirmée |
+| Part de l'attente des données | 5 % | **Le CPU n'est pas un goulot** : le GPU calcule 95 % du temps |
+| Évaluation du dev officiel | 1,2 min | 2 % d'une époque : on peut évaluer souvent |
+| Mémoire GPU maximale | 1,84 Go sur 15 Go | Une grande marge, qui permettra plus tard un batch ou un modèle plus gros (une modification à la fois) |
+| Loss sur 300 steps | 6,46 → 3,13 | Démarrage normal (phase du blank) |
+| Téléchargement et décompression | 12,5 + 10 min | Environ 22 min au début de chaque session |
+| **20 époques** | **20,9 h de calcul**, 11 époques au maximum par session de 12 h | **2 sessions**, environ 21,6 h de quota sur les 30 h de la semaine |
+
+**Réglages de l'entraînement (décisions) :**
+
+1. **Warmup : 5 %**, soit 19 135 steps, ce qui fait exactement une époque.
+   - **Nuance importante :** « garder le même réglage » est ambigu. En pourcentage, 5 % est identique à avant. En nombre de steps, c'est 4,7 fois plus long : 19 135 contre 4 060. Or la stabilisation du départ (des poids aléatoires, les moyennes d'AdamW pas encore fiables, des pics de gradient d'environ 25) dépend du **nombre de steps**, pas de la taille du dataset. Environ 1 % (3 827 steps) aurait gardé la même durée réelle de démarrage.
+   - **Pourquoi 5 % :** c'est le choix le plus sûr, sans aucun risque d'instabilité. Le coût est faible : pendant environ 1 h sur 20, le learning rate reste sous son maximum, mais le modèle apprend quand même. L'effet attendu sur le WER final est faible.
+2. **Sauvegardes : option B.**
+   - `last.pt` tous les 2 000 steps (environ 6 min), avec la reprise **au milieu d'une époque** ;
+   - **arrêt automatique vers 11 h 15** de session, avec une sauvegarde juste avant ;
+   - **pourquoi :** une coupure ne fait perdre que 6 min au maximum (contre jusqu'à 1 h avec une sauvegarde par époque), et on ne dépasse jamais la limite de 12 h de Kaggle. On ne sait pas si Kaggle garde les fichiers d'une version coupée de force ;
+   - la 2e session récupère `last.pt` en ajoutant la version précédente comme **entrée** du notebook. Ce sont des poids, pas des données : les conditions MDC sont respectées.
+3. **Évaluation sur le dev officiel : toutes les demi-époques.**
+   - 40 points sur la courbe au lieu de 20, et `best.pt` (le meilleur WER) est choisi plus finement ;
+   - le coût est d'environ 4 % de temps en plus (1,2 min par évaluation).
+
+**Les autres réglages ne changent pas** par rapport à l'essai 1 : modèle S, batch de 32, AdamW (learning rate maximum 1e‑3, weight decay 0,01), cosinus jusqu'à 0, clipping à 1, SpecAugment et dropout de 0,1. On ajoute seulement le retrait des 113 clips du train incompatibles avec le CTC, avec la même règle que l'EDA : on garde un clip si le CTC demande entre 2 et 25 instants par seconde.
+- Total : 20 × 19 135 = **382 700 steps**.
+
+## 2026-11-11 — Entraînement sur le grand dataset : session 1 sur Colab, coupure, reprise sur Kaggle
+
+**Ce qui s'est passé :**
+
+1. Kaggle est resté longtemps en *Queued* : on a lancé la session 1 sur **Google Colab** (T4, version `stt_07_..._colab.ipynb`, sauvegardes dans Google Drive).
+2. Colab a coupé la session vers **5,7 h** : « pas d'accès aux GPU à cause des limites d'utilisation de Colab ». Le dernier `last.pt` est au **step 52 000** (3e époque, batch 13 736 / 19 132). On a perdu environ 1 000 steps.
+3. On a mis `last.pt`, `best.pt` et `history.json` dans un **dataset Kaggle privé** (ce sont nos poids et nos chiffres, aucune donnée Common Voice), et relancé sur **Kaggle** avec ce dataset en entrée.
+
+**Résultats de la session 1** (dev officiel, `history.json`) :
+
+| Époque | Train loss | Dev loss | WER | CER |
+|---|---|---|---|---|
+| 0,5 | 2,426 | 1,598 | 89,6 % | 40,7 % |
+| 1,0 | 1,705 | 1,150 | 76,9 % | 30,1 % |
+| 1,5 | 1,452 | 0,955 | 69,7 % | 25,2 % |
+| 2,0 | 1,323 | 0,862 | 65,2 % | 22,9 % |
+| 2,5 | 1,247 | 0,799 | **61,9 %** | **21,3 %** |
+
+- Dès 1,5 époque, le WER passe sous les 70,8 % du petit dataset (80 époques). Ce n'est pas le même dev : la comparaison n'est pas exacte, mais la tendance est nette.
+- **Dev loss < train loss :** normal, car SpecAugment et le dropout sont actifs au train et coupés au dev, et la loss train est une moyenne sur la demi-époque (voir NOTIONS, section 27).
+
+**Pourquoi repasser sur Kaggle plutôt que rester sur Colab :**
+
+- **Vitesse :** 0,35 s par step sur Colab contre 0,19 s sur Kaggle. Cause probable : Colab gratuit n'a que 2 cœurs CPU pour préparer les batchs (4 sur Kaggle). Il reste environ 330 000 steps : environ 18 h sur Kaggle (2 sessions), environ 32 h sur Colab (5 à 6 sessions, avec des coupures imprévisibles).
+- Kaggle tourne en arrière-plan (PC éteint possible), avec un quota connu de 30 h par semaine.
+- Utiliser un 2e compte Google pour contourner les limites de Colab a été écarté : c'est contraire aux règles de Colab.
+
+**Corrections du code (trouvées pendant la session) :**
+
+1. **Affichage du WER et du CER ×100** (« WER 6186.6 % » au lieu de 61,9 %). `error_rate` renvoie déjà un pourcentage, et le `print` utilisait le format `:.1%`, qui multiplie encore par 100. On utilise maintenant `:.1f}%`. Seul l'affichage était faux : `history.json` et le choix de `best.pt` étaient corrects.
+2. **Choix du `last.pt` à la reprise.** Avant, la cellule 4 prenait le premier `last.pt` trouvé par ordre alphabétique. Avec plusieurs entrées (le checkpoint de Colab plus la sortie de la session précédente), elle aurait pu reprendre un ancien checkpoint. Maintenant, elle prend **celui qui a le plus grand nombre de steps**.
+
+## 2026-11-12 — Fin de l'entraînement sur le grand dataset : WER 37,4 %, CER 11,0 %
+
+**Déroulement :** 3 sessions au total.
+
+| Session | Plateforme | Steps | Fin |
+|---|---|---|---|
+| 1 | Colab (T4) | 0 → 52 000 | Coupure par Colab vers 5,7 h (quota GPU) |
+| 2 | Kaggle (T4) | 52 000 → 230 431 | Arrêt automatique à 11 h 15, comme prévu |
+| 3 | Kaggle (T4) | 230 431 → 382 640 | Entraînement terminé en 9,4 h |
+
+- Les deux reprises ont fonctionné : la cellule 4 a choisi à chaque fois le `last.pt` le plus avancé.
+- Aucune donnée Common Voice n'a été sauvegardée : seulement les poids et `history.json` (dataset Kaggle privé, Google Drive, `runs/grand_s_specaug/` sur le PC, hors du repo).
+
+**Résultats (dev officiel, 15 944 clips gardés) :**
+
+![Courbes de l'entraînement sur le grand dataset](figures/courbes_grand_s_specaug_20ep.png)
+
+| Époque | Train loss | Dev loss | WER | CER | lr |
+|---|---|---|---|---|---|
+| 1 | 1,705 | 1,150 | 76,9 % | 30,1 % | 1,0e-3 |
+| 5 | 1,078 | 0,664 | 53,8 % | 17,6 % | 8,9e-4 |
+| 10 | 0,920 | 0,532 | 45,8 % | 14,2 % | 5,4e-4 |
+| 15 | 0,791 | 0,444 | 39,8 % | 12,0 % | 1,6e-4 |
+| **19** | 0,729 | 0,410 | **37,38 %** | 11,06 % | 6,8e-6 |
+| 20 | 0,728 | 0,409 | 37,41 % | **11,04 %** | 0 |
+
+- **`best.pt` = époque 19** (step 363 508), WER 37,38 %. Les époques 18,5 à 20 sont un plateau : le learning rate est presque nul.
+- **Comparaison :** 70,8 % (petit dataset + SpecAugment, 80 époques) → **37,4 %** avec le **même modèle S**. Seules les données ont changé : le diagnostic de sous-apprentissage du 2026-11-02 était le bon. **Attention :** le dev n'est pas le même. La vraie comparaison demande d'évaluer `best.pt` sur l'ancien dev (sans recouvrement avec le grand train) et sur l'ancien test (en retirant le clip qui recouvre le train).
+- **Pas d'overfitting :** la loss dev reste sous la loss train jusqu'à la fin, avec un écart stable (voir NOTIONS, section 27).
+- **CER 11 % contre WER 37 % :** une seule lettre fausse rend tout le mot faux. En français, beaucoup d'erreurs restantes sont probablement orthographiques (accords, lettres muettes, homophones). Un modèle de langue au décodage devrait surtout faire baisser le WER.
+- **Point à surveiller : la norme du gradient** a augmenté pendant tout l'entraînement (moyenne de 1,2 à 3,8 ; pics jusqu'à 134,7 à la fin). Le clipping à 1,0 l'a contenue, sans effet visible sur la loss. À regarder si on passe à un modèle plus gros.
+- **Estimation faite à l'époque 12 :** « vers 37 à 40 % ». Résultat : 37,4 %.
+
+**Prochaine étape (à décider) :** évaluer `best.pt` sur le test officiel (le chiffre à annoncer, mesuré une seule fois), sur l'ancien dev et l'ancien test (vraie comparaison), puis RTF et comparaison avec Whisper.
+
+## 2026-11-12 — Évaluation sur le test officiel : WER 43,3 %, CER 14,4 %
+
+**Pourquoi maintenant :** le dev a servi à choisir `best.pt`. Le test n'a jamais servi à rien : c'est le chiffre honnête à annoncer. Il est mesuré **une seule fois**, avec `stt_08_evaluation_test.ipynb` (Kaggle, GPU T4, environ 20 min dont 18 de téléchargement).
+
+**Décisions :**
+- **Tous les clips gardés par `load_split`**, sans le filtre du CTC : sur le robot, on ne pourra pas trier les phrases à l'avance. Les 4 clips « impossibles » pour le CTC sont donc comptés dans le résultat.
+- **Aucune phrase affichée ni sauvegardée :** pour chaque clip, on garde seulement des nombres (erreurs de mots et de lettres, longueurs, durée). Le résultat est dans `test_result.json`.
+
+**Résultats :** `best.pt` (époque 19, step 363 508), sur **15 936 clips** (16 207 dans `test.tsv`, 271 retirés pour des caractères hors vocabulaire, soit 1,7 %), environ 26 h d'audio.
+
+| Mesure | Dev officiel | **Test officiel** |
+|---|---|---|
+| WER | 37,4 % | **43,3 %** |
+| CER | 11,0 % | **14,4 %** |
+| Loss CTC | 0,41 | 0,55 |
+| Clips sans aucune erreur de mot | — | 3,9 % |
+
+| Durée du clip | Clips | WER | CER |
+|---|---|---|---|
+| < 3 s | 486 | 56,5 % | 23,1 % |
+| 3 à 5 s | 4 791 | 43,9 % | 15,0 % |
+| 5 à 7 s | 6 746 | 41,7 % | 13,7 % |
+| ≥ 7 s | 3 913 | 44,8 % | 14,8 % |
+
+**Lecture :**
+- **Le test est 6 points plus mauvais que le dev.** Ce n'est presque pas dû au choix de `best.pt` sur le dev : les dernières époques forment un plateau (37,38 % à 37,41 %), donc le choix n'a favorisé le dev que de quelques centièmes. La **loss** est aussi plus haute sur le test (0,55 contre 0,41) : le modèle trouve vraiment ces clips plus difficiles, ce n'est pas un effet du décodage.
+- **Hypothèses, non vérifiées :** le dev et le test n'ont pas les mêmes voix (micros, accents, part de fr-CA), ni les mêmes phrases. Les voix comptent beaucoup : un modèle de 3,6 M de paramètres généralise moins bien d'une voix à l'autre qu'un gros modèle. Une vérification possible, sans identifier personne : comparer la répartition des WER par locuteur anonyme entre le dev et le test.
+- **Leçon de méthode :** un WER mesuré sur le dev qui a servi à choisir n'est pas le chiffre à annoncer. **Le chiffre du modèle actuel est 43,3 %.**
+- **Clips courts (< 3 s) :** les plus mauvais (56,5 %). Une phrase de 2 ou 3 mots n'a presque pas de contexte, et une seule erreur pèse lourd. Ils ne font que 3 % du test, mais les **commandes données au robot sont souvent courtes** : c'est un point important pour la suite.
+- **3,9 % de phrases parfaites :** avec environ 10 mots par phrase et 43 % de mots faux, presque toutes les phrases ont au moins une erreur. Pour le robot, qui doit comprendre la phrase entière, on est encore loin de l'objectif (WER < 20 %).
+- **CER 14,4 % :** le son reste bien perçu (6 lettres sur 7 justes). Le plus gros des erreurs est toujours l'orthographe, ce qu'un modèle de langue au décodage vise directement.
+
+**Prochaine étape (à décider) :** ancien dev et ancien test (vraie comparaison avec 72,5 % et 70,8 %), RTF et Whisper sur le même test, ou directement une piste d'amélioration (modèle de langue, modèle plus gros, données plus variées).

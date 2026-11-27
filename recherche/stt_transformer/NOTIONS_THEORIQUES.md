@@ -928,3 +928,63 @@ def spec_augment(features, n_freq_masks=2, max_freq_width=27,
         if self.augment:
             features = spec_augment(features)                 # nouveaux masques à chaque appel
 ```
+
+---
+
+## 26. Sur-apprentissage (*overfitting*) et sous-apprentissage (*underfitting*)
+
+**Explication.** On compare deux erreurs : celle sur le **train** (les exemples appris) et celle sur le **dev** (des locuteurs jamais entendus).
+- **Sur-apprentissage :** l'erreur train est très basse, et l'erreur dev est haute ou **remonte**. Le modèle apprend les exemples **par cœur** au lieu d'apprendre la règle générale. C'est comme un élève qui récite les corrigés sans comprendre : il échoue sur un nouvel exercice.
+- **Sous-apprentissage :** les deux erreurs sont **proches** l'une de l'autre, mais **encore hautes**. Le modèle n'a pas assez appris : il lui manque des **exemples**, de la **capacité** (des paramètres), ou du **temps** d'entraînement.
+
+| Situation | Loss train | Loss dev | Écart | Remèdes |
+|---|---|---|---|---|
+| Sur-apprentissage | basse | haute, et elle remonte | grand | plus de données, augmentation (SpecAugment), dropout, modèle plus petit |
+| Sous-apprentissage | haute | haute | petit | plus de données, modèle plus gros, entraînement plus long |
+| Bon équilibre | basse | basse | petit | — |
+
+**Piège :** quand on entraîne avec une augmentation, la loss train est mesurée sur des données **rendues plus difficiles** (masquées). Elle est donc naturellement plus haute, et on ne peut pas la comparer à la loss train d'un modèle entraîné sans augmentation. **Pour comparer deux modèles, on regarde le dev**, qui n'est jamais augmenté.
+
+**Où on l'a appliquée.** Dans le diagnostic de nos deux entraînements, grâce aux courbes de loss tracées à chaque époque à partir de `history.json`.
+
+**Pourquoi (nos chiffres).**
+
+| | Loss train finale | Loss dev finale | Écart | Diagnostic |
+|---|---|---|---|---|
+| Référence (200 ép.) | 0,11 | 2,29 | 2,18 | **Sur-apprentissage** : la loss dev remonte dès l'époque 31 |
+| SpecAugment (80 ép.) | 1,03 | 1,08 | 0,05 | Plus de sur-apprentissage, on s'approche du **sous-apprentissage** : WER encore à 70,8 % |
+
+Le remède a donc changé. Contre le sur-apprentissage, on a ajouté SpecAugment. Contre le sous-apprentissage, on passe au grand dataset, et ensuite, peut-être, à un modèle plus gros.
+
+**Code** (le diagnostic, à partir de l'historique enregistré à chaque époque) :
+
+```python
+import json
+
+with open("runs/s_specaug_80ep/history.json") as f:
+    history = json.load(f)                       # une ligne de métriques par époque
+
+last = history[-1]
+gap = last["dev_loss"] - last["train_loss"]      # écart entre dev et train en fin d'entraînement
+best_dev = min(history, key=lambda r: r["dev_loss"])
+rising = last["dev_loss"] > 1.2 * best_dev["dev_loss"]   # la loss dev a-t-elle nettement remonté ?
+
+if rising:
+    print("Sur-apprentissage : la loss dev remonte depuis l'époque", best_dev["epoch"])
+elif gap < 0.2:
+    print(f"Écart faible ({gap:.2f}) : pas de sur-apprentissage ; si le WER reste haut, c'est du sous-apprentissage")
+```
+
+## 27. Pourquoi la loss dev peut être plus basse que la loss train
+
+> **À réviser ensemble** (question posée pendant l'entraînement sur le grand dataset, ép 2,50 : train 1,247, dev 0,799).
+
+**Ma réponse :** « le modèle généralise bien ». C'est **juste en partie** : un modèle qui généralise bien explique une loss dev **égale** à la loss train, pas **plus basse**.
+
+**Les trois vraies raisons :**
+
+1. **SpecAugment est actif au train et coupé au dev.** Au train, le modèle entend un son abîmé (bandes de fréquences et morceaux de temps masqués). Au dev, il reçoit le son intact : la tâche est plus facile.
+2. **Le dropout aussi.** Au train, environ 10 % des neurones sont éteints au hasard. Au dev, `model.eval()` coupe le dropout : le modèle complet répond.
+3. **Ce n'est pas mesuré au même moment.** La loss train est une **moyenne sur toute la demi-époque** (≈ 9 500 steps) : elle mélange le modèle du début, moins bon, et celui de la fin. La loss dev est mesurée avec le modèle de la **fin**.
+
+**À retenir :** dev < train est normal quand on utilise de la régularisation (SpecAugment, dropout). C'est même un bon signe : pas de sur-apprentissage. L'alerte serait l'inverse : la loss train qui baisse pendant que la loss dev remonte (référence à 200 époques : train 0,11, dev 2,29 ; voir la section 26).

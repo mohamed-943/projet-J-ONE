@@ -284,13 +284,13 @@ pour chaque bloc de chunk_seconds (1 s = 32 000 octets) :
 _drain() : dormir jusqu'à _play_end                       (quand la file est vide)
 ```
 
-Toutes les phrases d'une réponse partagent un `stream_id` (horodatage en millisecondes, créé dans `begin_response`) et s'enchaînent dans le même flux.
+Toutes les phrases d'une réponse partagent un `stream_id` (horodatage en millisecondes, créé dans `begin_response`) et s'enchaînent dans le même flux. 
 
 `SoundDeviceSpeaker` appelle `sd.play(..., blocking=True)`. `NullSpeaker` dort pendant la durée du PCM.
 
 ### 4.12 `robot.py` — SDK Unitree
 
-`get_audio_client(robot_cfg)` est un singleton protégé par verrou : `ChannelFactoryInitialize(0, network_interface)` une seule fois par processus, puis `AudioClient()`, `SetTimeout()` et `Init()`. `G1Speaker` et `G1Led` partagent cette instance. **Aucun client de locomotion n'est importé dans le projet.**
+`get_audio_client(robot_cfg)` est un singleton protégé par verrou : `ChannelFactoryInitialize(0, network_interface)` une seule fois par processus, puis `AudioClient()`, `SetTimeout()` et `Init()`. `G1Speaker` et `G1Led` partagent cette instance. **Aucun client de locomotion n'est importé dans le projet.**OUI J
 
 ### 4.13 `exchange_log.py` et `metrics.py`
 
