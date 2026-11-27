@@ -195,7 +195,10 @@ class VoicePipeline:
             spoken.append(text)
 
         splitter = SentenceSplitter(first_clause_chars=self.first_clause_chars)
-        messages = self.conversation.with_user(user_text + LANGUAGE_HINTS.get(language, ""))
+        # Le message est gardé tel qu'envoyé, rappel compris : l'historique du tour
+        # suivant reste identique à ce qu'Ollama a déjà calculé.
+        sent_text = user_text + LANGUAGE_HINTS.get(language, "")
+        messages = self.conversation.with_user(sent_text)
         try:
             stream = self.router.stream(self.system_prompt, messages, info, language=language)
             try:
@@ -231,7 +234,7 @@ class VoicePipeline:
 
         reply = " ".join(spoken)
         if status == "ok":
-            self.conversation.commit(user_text, reply)
+            self.conversation.commit(sent_text, reply)
         log.info("J-ONE (%s) : %s", info.backend or "-", reply)
 
         latencies.update({

@@ -23,12 +23,15 @@ def test_already_16k_is_untouched_in_length():
 
 
 def test_conversation_keeps_last_turns_and_only_spoken_replies():
-    conv = Conversation(max_turns=2)
-    for i in range(3):
+    conv = Conversation(max_turns=4)
+    for i in range(4):
         conv.commit(f"q{i}", f"r{i}")
     conv.commit("q-vide", "  ")
-    assert [m["content"] for m in conv.messages] == ["q1", "r1", "q2", "r2"]
-    assert conv.with_user("q3")[-1] == {"role": "user", "content": "q3"}
+    assert len(conv.messages) == 8
+    # 5e échange : coupe par blocs, il reste les 2 plus récents
+    conv.commit("q4", "r4")
+    assert [m["content"] for m in conv.messages] == ["q3", "r3", "q4", "r4"]
+    assert conv.with_user("q5")[-1] == {"role": "user", "content": "q5"}
     assert len(conv.messages) == 4
 
 
@@ -184,7 +187,7 @@ def _server_stt(responses):
 
 
 def test_whisper_server_keeps_auto_transcription_when_language_allowed():
-    res = {"language_probabilities": {"en": 0.9, "fr": 0.05},
+    res = {"language": "english", "language_probabilities": {"en": 0.9, "fr": 0.05},
            "segments": [{"text": " Hello there.", "avg_logprob": -0.2, "no_speech_prob": 0.05}]}
     stt, calls = _server_stt([res])
     tr = stt.transcribe(np.zeros(1600, dtype=np.int16))
@@ -193,7 +196,7 @@ def test_whisper_server_keeps_auto_transcription_when_language_allowed():
 
 
 def test_whisper_server_retranscribes_in_allowed_language():
-    first = {"language_probabilities": {"nn": 0.42, "en": 0.33, "fr": 0.25},
+    first = {"language": "norwegian nynorsk", "language_probabilities": {"nn": 0.42, "en": 0.33, "fr": 0.25},
              "segments": [{"text": " Hei.", "avg_logprob": -0.9, "no_speech_prob": 0.3}]}
     second = {"segments": [{"text": " Bonjour.", "avg_logprob": -0.3, "no_speech_prob": 0.1}]}
     stt, calls = _server_stt([first, second])
@@ -213,3 +216,22 @@ def test_audio_ctx_has_margin_and_bounds():
     assert audio_ctx_for(2.85, 2.0, 384) == 384      # court : minimum
     assert audio_ctx_for(10.0, 2.0, 384) == 640      # (10 + 2) s × 50, arrondi à 64
     assert audio_ctx_for(40.0, 2.0, 384) == 1500     # jamais plus de 30 s
+
+
+def test_whisper_server_retranscribes_when_probs_disagree_with_transcription():
+    # probabilités : anglais ; mais Whisper a transcrit en chinois
+    first = {"language": "chinese", "language_probabilities": {"en": 0.5, "zh": 0.3, "fr": 0.1},
+             "segments": [{"text": "骨頭骨", "avg_logprob": -0.9, "no_speech_prob": 0.0}]}
+    second = {"segments": [{"text": " Okay.", "avg_logprob": -0.5, "no_speech_prob": 0.0}]}
+    stt, calls = _server_stt([first, second])
+    tr = stt.transcribe(np.zeros(1600, dtype=np.int16))
+    assert calls == ["auto", "en"] and tr.text == "Okay."
+
+
+def test_filter_rejects_non_latin_script():
+    from jone.stt import Transcription
+    from jone.text_filter import TranscriptFilter
+
+    f = TranscriptFilter()
+    assert f.check(Transcription("骨頭骨", avg_logprob=-0.5)).reason == "écriture non latine"
+    assert f.check(Transcription("Ça va très bien, merci !", avg_logprob=-0.2)).accepted

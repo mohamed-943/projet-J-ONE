@@ -24,9 +24,13 @@ class Conversation:
             return
         self.messages.append({"role": "user", "content": user_text})
         self.messages.append({"role": "assistant", "content": assistant_text})
-        excess = len(self.messages) - 2 * self.max_turns
-        if excess > 0:
-            self.messages = self.messages[excess:]
+        if len(self.messages) > 2 * self.max_turns:
+            # Coupe par blocs : on ne garde que la moitié la plus récente. Retirer un
+            # seul échange à chaque tour changerait le début de la conversation à
+            # chaque fois, et le LLM local devrait relire tout l'historique au lieu
+            # de réutiliser son calcul (2 s au lieu de 0,2 s mesurées sur la Jetson).
+            keep = max(1, self.max_turns // 2)
+            self.messages = self.messages[-2 * keep :]
 
     def clear(self) -> None:
         self.messages.clear()

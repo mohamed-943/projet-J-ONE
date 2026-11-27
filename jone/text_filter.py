@@ -88,6 +88,10 @@ class TranscriptFilter:
 
         if letters < self.min_chars:
             return FilterResult(False, text, "vide")
+        if _mostly_non_latin(text):
+            # Le robot parle français et anglais : du chinois ou du cyrillique vient
+            # d'un bruit que Whisper a pris pour une autre langue.
+            return FilterResult(False, text, "écriture non latine")
         if norm in self.blacklist:
             return FilterResult(False, text, "hallucination connue")
         if norm in _SUSPICIOUS and (t.no_speech_prob > SUSPICIOUS_MAX_NO_SPEECH
@@ -100,6 +104,14 @@ class TranscriptFilter:
         if _has_repeated_ngram(norm):
             return FilterResult(False, text, "boucle de répétition")
         return FilterResult(True, text)
+
+
+def _mostly_non_latin(text: str) -> bool:
+    alpha = [c for c in text if c.isalpha()]
+    if not alpha:
+        return False
+    latin = sum(unicodedata.name(c, "").startswith("LATIN") for c in alpha)
+    return latin < len(alpha) / 2
 
 
 def _has_repeated_ngram(text: str, n: int = 3, max_repeats: int = 4) -> bool:

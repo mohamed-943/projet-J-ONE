@@ -47,6 +47,9 @@ def _wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
+# whisper-server renvoie la langue transcrite en toutes lettres.
+LANGUAGE_CODES = {"french": "fr", "english": "en", "spanish": "es", "german": "de",
+                  "italian": "it", "portuguese": "pt", "dutch": "nl", "arabic": "ar"}
 FULL_CTX = 1500  # 30 s d'audio, 50 positions par seconde
 
 
@@ -179,7 +182,12 @@ class WhisperServerSTT:
             probs = res.get("language_probabilities") or {}
             language, language_prob = choose_language(probs, self.languages,
                                                       self.default_language, self.language_margin)
-            transcribed = max(probs, key=probs.get) if probs else None
+            # La langue que Whisper a réellement transcrite ; les probabilités viennent
+            # d'une détection séparée et peuvent désigner une autre langue.
+            if res.get("language"):
+                transcribed = LANGUAGE_CODES.get(str(res["language"]).lower())
+            else:
+                transcribed = max(probs, key=probs.get) if probs else None
             if language != transcribed:
                 log.info("Langue détectée %s, retranscription en %s", transcribed, language)
                 res = self._request(wav, language, with_probs=False, audio_s=audio_s)

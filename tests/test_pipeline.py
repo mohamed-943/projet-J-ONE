@@ -92,6 +92,8 @@ def make_pipeline(cloud=None, local=None, **kw):
 
 
 def test_reply_is_spoken_logged_and_remembered():
+    from jone.pipeline import LANGUAGE_HINTS
+
     cloud = FakeBackend("claude", "Bonjour ! Je suis **J-ONE**. Ravi de vous voir.")
     p, led, log, tts = make_pipeline(cloud=cloud)
     reply = p.respond("Salut")
@@ -102,7 +104,7 @@ def test_reply_is_spoken_logged_and_remembered():
     assert rec["statut"] == "ok" and rec["llm"] == "claude" and rec["bascule"] is False
     assert rec["latences_ms"]["bout_en_bout"] is not None
     p.respond("Et toi ?")
-    assert cloud.seen[-1][:2] == [{"role": "user", "content": "Salut"},
+    assert cloud.seen[-1][:2] == [{"role": "user", "content": "Salut" + LANGUAGE_HINTS["fr"]},
                                   {"role": "assistant", "content": reply}]
 
 
@@ -219,8 +221,8 @@ def test_language_hint_sent_to_llm():
     p, _, _, _ = make_pipeline(cloud=cloud)
     p.respond("Hi", language="en")
     assert cloud.seen[0][-1]["content"] == "Hi" + LANGUAGE_HINTS["en"]
-    # l'historique garde le texte réellement dit, sans le rappel
-    assert p.conversation.messages[0]["content"] == "Hi"
+    # l'historique garde le message tel qu'envoyé, pour le cache du LLM local
+    assert p.conversation.messages[0]["content"] == "Hi" + LANGUAGE_HINTS["en"]
 
 
 def test_warmup_synthesizes_each_voice():
