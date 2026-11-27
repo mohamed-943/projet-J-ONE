@@ -55,6 +55,15 @@ def choose_language(probs: dict[str, float], languages, default: str, margin: fl
     return best, share
 
 
+def prompt_for(prompt, language: str | None) -> str | None:
+    """Vocabulaire donné à Whisper pour cette langue. `prompt` est un texte, ou un
+    dictionnaire par langue avec la clé « auto » pour une détection automatique :
+    un vocabulaire en français pousse Whisper à traduire l'anglais en français."""
+    if isinstance(prompt, dict):
+        return prompt.get(language or "auto") or prompt.get("auto") or None
+    return prompt or None
+
+
 def _load_model(model, device, compute_type, cpu_threads):
     from faster_whisper import WhisperModel
 
@@ -82,7 +91,7 @@ class WhisperSTT:
         self.language_margin = language_margin
         self.switch_share = switch_share
         self.min_switch_s = min_switch_s
-        self.prompt = prompt or None
+        self.prompt = prompt
         self.detector = None
         if not language and len(self.languages) > 1 and detect_model and detect_model != model:
             self.detector = _load_model(detect_model, device, compute_type, cpu_threads)
@@ -102,7 +111,7 @@ class WhisperSTT:
             # douteux : chacun coûte une passe complète (13 à 29 s mesurées sur la
             # Jetson), et le filtre de transcription écarte de toute façon ces cas.
             temperature=0.0,
-            initial_prompt=self.prompt,
+            initial_prompt=prompt_for(self.prompt, language),
             vad_filter=False,  # déjà fait par Silero en amont
             condition_on_previous_text=False,
             without_timestamps=True,

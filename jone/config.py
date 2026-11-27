@@ -45,9 +45,10 @@ DEFAULTS: dict[str, Any] = {
         "default_language": "fr",  # retenue quand la détection hésite
         "language_margin": 0.65,
         "switch_share": 0.85,  # part nécessaire pour quitter la langue de la conversation
-        "min_switch_s": 1.5,
-        # Vocabulaire attendu, donné à Whisper : sans lui, « Sibo » devient « Si beau ».
-        "prompt": "Sibo",  # énoncé plus court : la langue de la conversation est gardée
+        "min_switch_s": 1.5,  # énoncé plus court : la langue de la conversation est gardée
+        # Vocabulaire donné à Whisper par langue (voir config.yaml).
+        "prompt": {"fr": "Conversation avec le robot Sibo.", "en": "Conversation with the robot Sibo.",
+                   "auto": "Sibo, Sibo, Sibo."},
         "detect_model": "tiny",  # modèle rapide pour la détection de langue
         "cpu_threads": 0,  # 0 : tous les cœurs
         "backend": "faster-whisper",  # faster-whisper | whisper-server (GPU de la Jetson)

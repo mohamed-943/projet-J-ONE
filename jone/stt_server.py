@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 
-from .stt import Transcription, choose_language
+from .stt import Transcription, choose_language, prompt_for
 
 log = logging.getLogger(__name__)
 
@@ -197,8 +197,9 @@ class WhisperServerSTT:
             "no_timestamps": "true",
             "no_language_probabilities": "false" if with_probs else "true",
         }
-        if self.prompt:
-            data["prompt"] = self.prompt
+        prompt = prompt_for(self.prompt, language)
+        if prompt:
+            data["prompt"] = prompt
         if self.min_audio_ctx:
             data["audio_ctx"] = str(audio_ctx_for(audio_s, self.audio_ctx_margin_s, self.min_audio_ctx))
         resp = self.client.post(self.url + "/inference", data=data,

@@ -273,3 +273,14 @@ def test_long_utterance_can_switch_language():
     stt, calls = _server_stt([res])
     tr = stt.transcribe(np.zeros(48000, dtype=np.int16), prefer="fr")  # 3 s
     assert calls == ["auto"] and tr.language == "en"
+
+
+def test_prompt_per_language():
+    from jone.stt import prompt_for
+
+    p = {"fr": "Conversation avec le robot Sibo.", "en": "Conversation with the robot Sibo.", "auto": "Sibo, Sibo, Sibo."}
+    assert prompt_for(p, "fr").startswith("Conversation avec")
+    assert prompt_for(p, "en").startswith("Conversation with")
+    assert prompt_for(p, "auto") == prompt_for(p, None) == "Sibo, Sibo, Sibo."
+    assert prompt_for(p, "es") == "Sibo, Sibo, Sibo."
+    assert prompt_for("", "fr") is None and prompt_for("Sibo", "en") == "Sibo"

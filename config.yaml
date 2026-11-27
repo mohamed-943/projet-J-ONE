@@ -33,7 +33,13 @@ stt:                            # EF-02, ENF-02
   language_margin: 0.65         # part minimale de la langue retenue (fr + en = 1)
   switch_share: 0.85            # part nécessaire pour quitter la langue de la conversation
   min_switch_s: 1.5             # énoncé plus court : langue de la conversation gardée, sans détection
-  prompt: "Sibo"                # vocabulaire attendu : sans lui, Whisper écrit « Si beau », « Sebo »
+  # Vocabulaire donné à Whisper, selon la langue de la requête. Sans lui, « Sibo » devient
+  # « Si beau » (commandes « Sibo, … » reconnues 5/16 ; 16/16 avec). Une phrase par langue :
+  # un vocabulaire en français fait traduire l'anglais. Le nom répété, en détection auto.
+  prompt:
+    fr: "Conversation avec le robot Sibo."
+    en: "Conversation with the robot Sibo."
+    auto: "Sibo, Sibo, Sibo."
   detect_model: tiny            # détection de langue par un petit modèle, puis une seule
                                 # passe du grand modèle (null : détection par ce dernier)
   cpu_threads: 0                # Whisper sur CPU : 0 = tous les cœurs
