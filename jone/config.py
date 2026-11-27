@@ -131,7 +131,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "audio_output": {
         "backend": "g1",  # g1 | sounddevice | none
-        "volume": 80,
+        "volume": 100,
         "app_name": "jone",
         "chunk_seconds": 1.0,
         "lead_seconds": 0.5,

@@ -123,7 +123,7 @@ tts:                            # EF-08
 
 audio_output:                   # EF-09, EF-10
   backend: g1                   # g1 (PlayStream) | sounddevice (PC) | none
-  volume: 80
+  volume: 100
   app_name: jone
   chunk_seconds: 1.0            # taille des blocs envoyés à PlayStream
   lead_seconds: 0.5             # avance maximale d'envoi sur la lecture
