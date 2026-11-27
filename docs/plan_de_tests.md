@@ -32,7 +32,7 @@ Ils couvrent le VAD (doublure de Silero), le filtre de transcriptions, le mot d'
 | Micro du G1 | même script (fin) | trames reçues, niveau RMS qui monte quand on parle |
 | Whisper : WER (ENF-02) | `python tools/enregistrer_corpus.py --phrases tests/corpus_phrases.txt --out corpus/calme --input g1_multicast`, puis `python tools/bench_stt.py --corpus corpus/calme` | WER global ≤ 10 %, latence p90 notée |
 | Piper : latence | `python tools/bench_tts.py` | facteur temps réel < 1 |
-| LLM et bascule | `python tools/bench_llm.py` puis `--simulate-outage` | premier jeton Claude < 1 s ; avec panne, toutes les réponses viennent de `qwen3-local` |
+| LLM et bascule | `python tools/bench_llm.py` puis `--simulate-outage` | premier jeton Claude < 1 s ; avec panne, toutes les réponses viennent de `local` |
 
 Enregistrer le corpus avec 3 à 5 voix différentes (hommes, femmes, accents), à environ 1 m du robot, dans une salle calme. Refaire ensuite un corpus `corpus/bruit` avec un fond sonore (ventilation, conversation) pour documenter la dégradation.
 
@@ -60,7 +60,7 @@ Leviers si la cible n'est pas atteinte : baisser `vad.min_silence_ms` (500 ms), 
 3. Faire 5 échanges : le robot doit répondre à chaque fois. Le premier prend au plus `first_token_timeout_s` de plus, les suivants vont directement au LLM local pendant `retry_cooldown_s`.
 4. Rétablir le Wi-Fi : après le délai de 30 s, les réponses reviennent à Claude.
 
-Dans le rapport, les échanges de l'étape 3 doivent avoir `llm = qwen3-local`, `bascule = true` pour le premier.
+Dans le rapport, les échanges de l'étape 3 doivent avoir `llm = local`, `bascule = true` pour le premier.
 
 ### C4 — LED conforme à l'état réel
 

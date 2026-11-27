@@ -62,7 +62,7 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
             speech_end_delay_s=cfg["vad"]["min_silence_ms"] / 1000.0,
         )
 
-    return VoicePipeline(
+    pipeline = VoicePipeline(
         router=router,
         conversation=Conversation(llm_cfg["history_max_turns"]),
         system_prompt=load_system_prompt(resolve_path(llm_cfg["system_prompt_file"])),
@@ -73,8 +73,11 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
         max_sentences=llm_cfg["max_sentences"],
         tail_margin_s=cfg["audio_output"]["tail_margin_s"],
         error_hold_s=cfg["led"]["error_hold_s"],
+        first_clause_chars=llm_cfg["first_clause_chars"],
         **kwargs,
     )
+    pipeline.warmup()
+    return pipeline
 
 
 def run_text_mode(pipeline, language: str = "fr") -> None:

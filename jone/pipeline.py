@@ -17,7 +17,7 @@ from .conversation import Conversation, load_system_prompt
 from .led import Led, State
 from .llm.router import LLMRouter, NoBackendAvailable, RouteInfo
 from .stt import Transcription
-from .text_utils import SentenceSplitter, clean_for_speech
+from .text_utils import SentenceSplitter, clean_for_speech, guess_language
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +29,13 @@ EMPTY_REPLIES = {
     "fr": "Pardon, je n'ai pas compris. Pouvez-vous reformuler ?",
     "en": "Sorry, I didn't catch that. Could you say it again?",
 }
+# Rappel ajouté au prompt système à chaque tour : un petit LLM local suit mal la
+# consigne générale « réponds dans la langue de l'interlocuteur ».
+LANGUAGE_HINTS = {
+    "fr": "\n\nL'interlocuteur parle français : réponds en français.",
+    "en": "\n\nThe person is speaking English: answer in English.",
+}
+WARMUP_TEXTS = {"fr": "Bonjour.", "en": "Hello."}
 NO_LLM_REPLY = NO_LLM_REPLIES["fr"]
 EMPTY_REPLY = EMPTY_REPLIES["fr"]
 
@@ -42,7 +49,8 @@ class VoicePipeline:
                  tts, speaker, led: Led, exchange_log, max_sentences: int = 3,
                  tail_margin_s: float = 0.4, error_hold_s: float = 2.0,
                  mic=None, segmenter=None, stt=None, text_filter=None, wake=None,
-                 speech_end_delay_s: float = 0.0, clock: Callable[[], float] = time.perf_counter):
+                 speech_end_delay_s: float = 0.0, first_clause_chars: int = 0,
+                 clock: Callable[[], float] = time.perf_counter):
         self.router = router
         self.conversation = conversation
         self.system_prompt = system_prompt
@@ -61,8 +69,19 @@ class VoicePipeline:
         # Le VAD ne déclare la fin de parole qu'après `min_silence_ms` de silence :
         # on l'ajoute pour mesurer la latence depuis la vraie fin de parole (ENF-01).
         self.speech_end_delay_s = speech_end_delay_s
+        self.first_clause_chars = first_clause_chars
         self.clock = clock
         self._stop = threading.Event()
+
+    def warmup(self) -> None:
+        """Premières inférences à vide de Whisper et de chaque voix : sans cela, le
+        premier échange paie plusieurs secondes d'initialisation."""
+        if self.stt is not None and hasattr(self.stt, "warmup"):
+            self.stt.warmup()
+        t0 = time.perf_counter()
+        for language in getattr(self.tts, "voices", {"fr": None}):
+            self.tts.synthesize(WARMUP_TEXTS.get(language, "Ok."), language=language)
+        log.info("Synthèse vocale préchauffée en %.1f s", time.perf_counter() - t0)
 
     # ------------------------------------------------------------------ boucle
     def run(self) -> None:
@@ -140,8 +159,9 @@ class VoicePipeline:
     # ----------------------------------------------------------- la réponse
     def respond(self, user_text: str, record: dict | None = None,
                 speech_end: float | None = None, language: str = "fr") -> str:
-        """Fait répondre le robot. `language` choisit la voix et les messages de
-        secours ; le LLM, lui, répond dans la langue de l'interlocuteur."""
+        """Fait répondre le robot. `language` est la langue de l'interlocuteur : elle
+        est rappelée au LLM et choisit les messages de secours. La voix, elle, suit
+        la langue de la réponse, devinée sur sa première phrase."""
         record = dict(record or {})
         record.setdefault("transcription", user_text)
         record.setdefault("langue", language)
@@ -155,24 +175,28 @@ class VoicePipeline:
         spoken: list[str] = []
         tts_first: float | None = None
         status = "ok"
+        voice: str | None = None  # fixée sur la première phrase, pour toute la réponse
 
-        def say(sentence: str) -> None:
-            nonlocal tts_first
-            text = clean_for_speech(sentence, language)
+        def say(sentence: str, fallback: bool = False) -> None:
+            nonlocal tts_first, voice
+            if voice is None:
+                voice = language if fallback else guess_language(sentence, default=language)
+            text = clean_for_speech(sentence, voice)
             if not text:
                 return
             t0 = self.clock()
-            pcm = self.tts.synthesize(text, language=language)
+            pcm = self.tts.synthesize(text, language=voice)
             if tts_first is None:
                 tts_first = self.clock() - t0
                 self.led.set_state(State.SPEAKING)
             self.speaker.enqueue(pcm)
             spoken.append(text)
 
-        splitter = SentenceSplitter()
+        splitter = SentenceSplitter(first_clause_chars=self.first_clause_chars)
         messages = self.conversation.with_user(user_text)
+        system = self.system_prompt + LANGUAGE_HINTS.get(language, "")
         try:
-            stream = self.router.stream(self.system_prompt, messages, info, language=language)
+            stream = self.router.stream(system, messages, info, language=language)
             try:
                 for delta in stream:
                     for sentence in splitter.feed(delta):
@@ -190,11 +214,12 @@ class VoicePipeline:
         except NoBackendAvailable as exc:
             log.error("Aucun LLM disponible : %s", exc)
             status = "erreur_llm"
-            say(NO_LLM_REPLIES.get(language, NO_LLM_REPLY))
+            say(NO_LLM_REPLIES.get(language, NO_LLM_REPLY), fallback=True)
 
         if not spoken:
             status = "reponse_vide" if status == "ok" else status
-            say(EMPTY_REPLIES.get(language, EMPTY_REPLY))
+            voice = None
+            say(EMPTY_REPLIES.get(language, EMPTY_REPLY), fallback=True)
 
         self.speaker.wait_until_done()
         first_audio = self.speaker.first_audio_at
@@ -218,6 +243,7 @@ class VoicePipeline:
             **record,
             "statut": status,
             "reponse": reply,
+            "voix": voice,
             "llm": info.backend,
             "bascule": info.fallback,
             "erreurs_llm": info.errors,

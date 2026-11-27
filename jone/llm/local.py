@@ -17,7 +17,7 @@ def _field(obj, key):
 
 
 class OllamaBackend:
-    name = "qwen3-local"
+    name = "local"
 
     def __init__(self, host="http://127.0.0.1:11434", model="qwen3:4b", max_tokens=200,
                  temperature=0.7, keep_alive="30m", timeout_s=20.0, **_ignored):

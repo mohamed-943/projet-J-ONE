@@ -383,7 +383,7 @@ Une ligne JSON par énoncé, dans `logs/echanges-AAAAMMJJ.jsonl` :
 ```
 
 - `statut` : `ok`, `rejete`, `ignore`, `erreur_llm` ou `reponse_vide`. Les lignes `rejete` et `ignore` n'ont ni `reponse` ni `llm`, mais ont un `motif`.
-- `llm` : `claude`, `qwen3-local` ou `null`.
+- `llm` : `claude`, `groq`, `local` ou `null`.
 - En mode texte (`--text`), il n'y a pas de champs `stt` ni `audio_s`, et `bout_en_bout` part de la validation de la saisie.
 
 `tools/rapport_tests.py` exploite ce format. Toute modification des noms de champs doit y être reportée.

@@ -115,13 +115,13 @@ def test_reply_cut_after_three_sentences():
 
 def test_offline_fallback_to_local():
     p, _, log, _ = make_pipeline(cloud=FakeBackend("claude", fail=True),
-                                 local=FakeBackend("qwen3-local", "Je suis là."))
+                                 local=FakeBackend("local", "Je suis là."))
     assert p.respond("Allô ?") == "Je suis là."
-    assert log.records[-1]["llm"] == "qwen3-local" and log.records[-1]["bascule"] is True
+    assert log.records[-1]["llm"] == "local" and log.records[-1]["bascule"] is True
 
 
 def test_no_llm_says_apology_and_shows_error():
-    p, led, log, tts = make_pipeline(local=FakeBackend("qwen3-local", fail=True))
+    p, led, log, tts = make_pipeline(local=FakeBackend("local", fail=True))
     p.respond("Allô ?")
     assert tts.spoken == [NO_LLM_REPLY]
     assert led.history[-1] == State.ERROR
@@ -188,7 +188,7 @@ def test_english_utterance_gets_english_voice_and_log():
 def test_fallback_messages_follow_language():
     from jone.pipeline import EMPTY_REPLIES, NO_LLM_REPLIES
 
-    p, _, _, tts = make_pipeline(local=FakeBackend("qwen3-local", fail=True))
+    p, _, _, tts = make_pipeline(local=FakeBackend("local", fail=True))
     p.respond("Hello?", language="en")
     assert tts.spoken == [NO_LLM_REPLIES["en"]]
     p2, _, _, tts2 = make_pipeline(cloud=FakeBackend("claude", "😀"))
@@ -201,3 +201,34 @@ def test_english_hallucinations_filtered():
     assert not f.check(Transcription("Thanks for watching!")).accepted
     assert not f.check(Transcription("Thank you.", avg_logprob=-0.9, no_speech_prob=0.5)).accepted
     assert f.check(Transcription("Thank you!", avg_logprob=-0.2, no_speech_prob=0.05)).accepted
+
+
+def test_voice_follows_reply_language():
+    # Question en anglais, mais le LLM local répond en français : voix française.
+    local = FakeBackend("local", "Je suis Sarah. Je suis là pour vous aider.")
+    p, _, log, tts = make_pipeline(local=local)
+    p.respond("Who are you?", language="en")
+    assert tts.languages == ["fr", "fr"]
+    assert log.records[-1]["voix"] == "fr" and log.records[-1]["langue"] == "en"
+
+
+def test_language_hint_sent_to_llm():
+    from jone.pipeline import LANGUAGE_HINTS
+
+    seen = []
+
+    class Recorder(FakeBackend):
+        def stream(self, system, messages):
+            seen.append(system)
+            yield from super().stream(system, messages)
+
+    p, _, _, _ = make_pipeline(cloud=Recorder("groq", "Hello."))
+    p.respond("Hi", language="en")
+    assert seen[0].endswith(LANGUAGE_HINTS["en"])
+
+
+def test_warmup_synthesizes_each_voice():
+    p, _, _, tts = make_pipeline(cloud=FakeBackend("claude", "Oui."))
+    tts.voices = {"fr": None, "en": None}
+    p.warmup()
+    assert tts.languages == ["fr", "en"]

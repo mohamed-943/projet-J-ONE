@@ -1,4 +1,4 @@
-from jone.text_utils import SentenceSplitter, ThinkStripper, clean_for_speech
+from jone.text_utils import SentenceSplitter, ThinkStripper, clean_for_speech, guess_language
 
 
 def feed_all(splitter, chunks):
@@ -50,3 +50,17 @@ def test_think_stripper_removes_blocks_across_chunks():
 def test_think_stripper_passthrough():
     strip = ThinkStripper()
     assert strip.feed("a < b") + strip.feed(" ok") == "a < b ok"
+
+
+def test_splitter_first_clause_starts_early():
+    s = SentenceSplitter(first_clause_chars=20)
+    assert s.feed("Bonjour, je suis Sarah, ") == ["Bonjour, je suis Sarah,"]
+    # seul le premier morceau est coupé à la virgule
+    assert s.feed("un robot, très curieuse, ") == []
+    assert s.feed("vraiment. Fin") == ["un robot, très curieuse, vraiment."]
+
+
+def test_guess_language():
+    assert guess_language("Je suis très contente de vous voir.") == "fr"
+    assert guess_language("I am very happy to see you.") == "en"
+    assert guess_language("Ok", default="en") == "en"

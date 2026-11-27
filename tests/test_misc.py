@@ -112,10 +112,49 @@ def test_whisper_language_restricted_to_allowed(monkeypatch):
                                          all_language_probs=[("es", 0.6), ("en", 0.3), ("fr", 0.1)])
             return iter([seg]), info
 
-    stt = WhisperSTT.__new__(WhisperSTT)
-    stt.model, stt.beam_size, stt.language, stt.languages = FakeModel(), 1, None, ["fr", "en"]
+    stt = _bare_stt(FakeModel())
     tr = stt.transcribe(np.zeros(1600, dtype=np.int16))
     assert calls == [None, "en"] and tr.language == "en"
+
+
+def _bare_stt(model, detector=None):
+    from jone.stt import WhisperSTT
+
+    stt = WhisperSTT.__new__(WhisperSTT)
+    stt.model, stt.detector, stt.beam_size, stt.language = model, detector, 1, None
+    stt.languages, stt.default_language, stt.language_margin = ["fr", "en"], "fr", 0.65
+    return stt
+
+
+class _Model:
+    """Whisper factice : renvoie les probabilités de langue données."""
+
+    def __init__(self, probs):
+        self.probs, self.calls = probs, []
+
+    def transcribe(self, samples, language=None, **kw):
+        import types
+
+        self.calls.append(language)
+        seg = types.SimpleNamespace(text=" Bonjour", avg_logprob=-0.2, no_speech_prob=0.1,
+                                    compression_ratio=1.0)
+        best = max(self.probs, key=self.probs.get)
+        info = types.SimpleNamespace(language=language or best, language_probability=self.probs[best],
+                                     all_language_probs=sorted(self.probs.items(), key=lambda kv: -kv[1]))
+        return iter([seg]), info
+
+
+def test_whisper_detector_then_single_pass():
+    big, tiny = _Model({"en": 0.9, "fr": 0.1}), _Model({"en": 0.8, "fr": 0.1, "de": 0.1})
+    tr = _bare_stt(big, detector=tiny).transcribe(np.zeros(1600, dtype=np.int16))
+    assert tiny.calls == [None] and big.calls == ["en"] and tr.language == "en"
+
+
+def test_whisper_hesitation_defaults_to_french():
+    # en 0.33 contre fr 0.25 : part de l'anglais 0.57 < 0.65 → français
+    big, tiny = _Model({"fr": 0.1}), _Model({"en": 0.33, "fr": 0.25, "nn": 0.42})
+    tr = _bare_stt(big, detector=tiny).transcribe(np.zeros(1600, dtype=np.int16))
+    assert big.calls == ["fr"] and tr.language == "fr"
 
 
 def test_local_config_overrides(tmp_path, monkeypatch):

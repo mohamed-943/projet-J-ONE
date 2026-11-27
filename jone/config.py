@@ -41,6 +41,10 @@ DEFAULTS: dict[str, Any] = {
         "beam_size": 1,
         "language": None,  # None : détection automatique parmi `languages`
         "languages": ["fr", "en"],
+        "default_language": "fr",  # retenue quand la détection hésite
+        "language_margin": 0.65,
+        "detect_model": "tiny",  # modèle rapide pour la détection de langue
+        "cpu_threads": 0,  # 0 : tous les cœurs
     },
     "filter": {
         "min_chars": 2,
@@ -58,6 +62,7 @@ DEFAULTS: dict[str, Any] = {
         "system_prompt_file": "prompts/system_prompt_fr.txt",
         "history_max_turns": 10,
         "max_sentences": 3,
+        "first_clause_chars": 30,
         "cloud": {
             "enabled": True,
             "provider": "claude",  # claude | groq (essais sans clé Anthropic)

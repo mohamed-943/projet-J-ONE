@@ -28,6 +28,11 @@ stt:                            # EF-02, ENF-02
   beam_size: 1                  # 1 = le plus rapide ; 5 = un peu plus précis
   language: null                # null : détection automatique parmi `languages`
   languages: [fr, en]           # réponse dans la langue de l'interlocuteur
+  default_language: fr          # retenue quand la détection hésite entre fr et en
+  language_margin: 0.65         # part minimale de la langue retenue (fr + en = 1)
+  detect_model: tiny            # détection de langue par un petit modèle, puis une seule
+                                # passe du grand modèle (null : détection par ce dernier)
+  cpu_threads: 0                # Whisper sur CPU : 0 = tous les cœurs
 
 filter:                         # EF-03
   min_chars: 2
@@ -45,6 +50,7 @@ llm:
   system_prompt_file: prompts/system_prompt_fr.txt   # EF-04
   history_max_turns: 10         # EF-05 : échanges gardés en mémoire
   max_sentences: 3              # EF-06 : coupure dure après 3 phrases
+  first_clause_chars: 30        # 1er morceau lu dès la 1re virgule après 30 caractères (0 : non)
   cloud:
     enabled: true
     provider: claude            # claude | groq (essais sans clé Anthropic, GROQ_API_KEY dans .env)
