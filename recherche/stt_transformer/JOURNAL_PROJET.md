@@ -850,3 +850,19 @@ Les **paramètres** sont les 3,6 M de poids du modèle : ils sont **appris** par
 **Outillage :** l'outil `kaggle` (ligne de commande) est installé sur le PC. Claude peut désormais envoyer un notebook sur Kaggle, le lancer et récupérer ses résultats sans passer par le navigateur.
 
 **Prochaine étape (à décider) :** Whisper sur le même test officiel (WER et RTF), ou directement une piste d'amélioration : modèle plus gros (la vitesse le permet), modèle de langue au décodage (orthographe), ou travail sur les clips courts.
+
+## 2026-11-27 — Whisper contre notre modèle : quota Kaggle épuisé, et Whisper turbo trop lent sur CPU
+
+**Préparé :** `stt_10_whisper_test_officiel.ipynb`, la comparaison complète sur le test officiel (15 936 clips, deux protocoles de comptage, RTF sur le même GPU T4, détection de langue). Il est prêt et poussé, mais **pas lancé** : `kaggle kernels push` a répondu *« Maximum weekly GPU quota of 30.00 hours reached »*. Le quota de la semaine a été consommé par d'autres notebooks du compte.
+
+**Essai en local (CPU Intel i5-7300U), avec le réglage de repli du robot** (`WhisperSTT`, `device="cpu"`, `compute_type="int8"`, `beam_size=1`, langue forcée en français) :
+- chargement du modèle : 193 s ;
+- **3 clips de l'ancien test (13,5 s d'audio) : 158 s de calcul, soit un RTF d'environ 11,7**. Whisper turbo est donc environ **12 fois plus lent que le temps réel** sur ce CPU ;
+- notre modèle, sur le même CPU : **RTF 0,014**. Il est donc environ **800 fois plus rapide** que Whisper turbo sans GPU. Seulement 3 clips : c'est un ordre de grandeur, pas une mesure précise ;
+- évaluer les 769 clips de l'ancien dev et de l'ancien test aurait pris environ 15 h : **abandonné**.
+
+**Lecture :** sans GPU, Whisper turbo est inutilisable en direct. Le robot dépend donc entièrement du GPU de la Jetson pour Whisper. Notre modèle, lui, tourne en temps réel sur n'importe quel CPU. C'est un argument en faveur de notre approche si la précision s'améliore.
+
+**Disque :** il ne restait que 1,9 Go sur C:. On a vidé le cache de `uv` (1,7 Go) et supprimé un modèle Hugging Face d'un autre projet (`multilingual-e5-base`, 1,1 Go), avec l'accord de l'utilisateur. Le modèle Whisper turbo téléchargé (1,6 Go) a été **supprimé après l'essai**, parce qu'il ne restait plus que 298 Mo. `faster-whisper` est ajouté aux dépendances (`pyproject.toml`).
+
+**Prochaine étape :** lancer `stt_10` sur Kaggle dès que le quota GPU revient (même commande, rien à modifier).

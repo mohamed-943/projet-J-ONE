@@ -5,6 +5,7 @@ description = "Recherche : Transformer STT entraîné de zéro (français), comp
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "faster-whisper>=1.2.1",
     "ipykernel>=7.4.0",
     "matplotlib>=3.11.2",
     "numpy>=2.5.4",
