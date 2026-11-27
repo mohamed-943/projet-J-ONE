@@ -161,13 +161,41 @@ class MicSource:
 - L'énoncé émis = pré-enregistrement + trames de parole. Le silence final est retiré, sauf si la fin a été forcée par `max_utterance_s`.
 - Avec des trames de 32 ms, les durées sont converties en nombre de trames par arrondi (`min_speech_ms: 250` → 8 trames, `min_silence_ms: 600` → 19 trames).
 
-### 4.4 `stt.py` — transcription
+### 4.4 `stt.py` et `stt_server.py` — transcription
 
-`WhisperSTT.transcribe(audio) -> Transcription(text, avg_logprob, no_speech_prob, compression_ratio, audio_s, elapsed_ms)`.
+`create_stt(cfg)` renvoie l'un des deux moteurs, selon `stt.backend`. Les deux exposent `transcribe(audio) -> Transcription(text, avg_logprob, no_speech_prob, compression_ratio, audio_s, elapsed_ms, language, language_prob)` et `warmup()`.
 
-Paramètres faster-whisper fixés : `language="fr"`, `vad_filter=False` (Silero est déjà passé), `condition_on_previous_text=False` (évite qu'une hallucination se propage d'un énoncé à l'autre) et `without_timestamps=True`. Les métriques de confiance sont agrégées sur les segments : moyenne de `avg_logprob`, maximum de `no_speech_prob` et de `compression_ratio`.
+La langue est choisie parmi `stt.languages` (`fr`, `en`) par `choose_language` : la langue autorisée la plus probable, ou `default_language` si sa part parmi les langues autorisées est sous `language_margin` (détection hésitante, fréquente quand le son est faible).
 
-Si `WhisperModel(device="cuda")` lève `ValueError` ou `RuntimeError` (CTranslate2 compilé sans CUDA), le constructeur retente sur le CPU en `int8` et écrit un avertissement dans le journal.
+**`faster-whisper`** (`WhisperSTT`, PC de développement) : `vad_filter=False` (Silero est déjà passé), `condition_on_previous_text=False` (évite qu'une hallucination se propage d'un énoncé à l'autre), `without_timestamps=True` et `temperature=0` (pas de nouveaux décodages sur un texte douteux, jusqu'à 29 s mesurées sur la Jetson). La langue est détectée par un petit modèle (`detect_model: tiny`), puis le grand transcrit une seule fois. Si `device="cuda"` échoue (CTranslate2 sans CUDA, cas de JetPack 5), repli sur le CPU en `int8`.
+
+**`whisper-server`** (`WhisperServerSTT`, robot) : whisper.cpp compilé avec CUDA sur la Jetson. Le pipeline lance `stt.server.binary` s'il ne répond pas sur `stt.server.url`, avec `-nf` (pas de nouveaux décodages). L'audio est envoyé en WAV sur `/inference`, avec `audio_ctx` réduit à la durée de l'énoncé plus `audio_ctx_margin_s` (au moins `min_audio_ctx`) : l'encodeur n'analyse plus 30 s d'audio pour une phrase de 3 s. Sans cette marge, Whisper répète la fin de la phrase. `compression_ratio`, que whisper.cpp ne fournit pas, est recalculé sur le texte.
+
+Mesures sur la Jetson Orin, phrase de 3 s, détection de langue comprise :
+
+| Moteur | Modèle | Temps |
+|---|---|---|
+| faster-whisper, CPU (8 cœurs) | small | 3,4 à 4,6 s |
+| whisper-server, GPU, fenêtre de 30 s | large-v3-turbo q5_0 | 2,3 s |
+| whisper-server, GPU, `audio_ctx` | large-v3-turbo q5_0 | 0,6 s |
+
+Installation sur la Jetson (JetPack 5, CUDA 11.4) :
+
+```bash
+uv venv ~/buildtools && uv pip install --python ~/buildtools/bin/python "cmake>=3.28,<4"   # cmake ≥ 3.18
+git clone --depth 1 --branch v1.9.6 https://github.com/ggml-org/whisper.cpp.git ~/whisper.cpp
+cd ~/whisper.cpp
+# nvcc 11.4 refuse un `if constexpr` sur une constante locale : remplacé par un `if`
+sed -i "534s/if constexpr (unaligned)/if (unaligned)/" ggml/src/ggml-cuda/mmq-few.cu
+export PATH=/usr/local/cuda/bin:$PATH
+~/buildtools/bin/cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=1 \
+    -DCMAKE_CUDA_ARCHITECTURES=87 -DWHISPER_BUILD_TESTS=OFF
+~/buildtools/bin/cmake --build build -j4 --target whisper-server      # environ 40 min
+curl -fL -C - -o models/ggml-large-v3-turbo-q5_0.bin \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+```
+
+Puis `stt: {backend: whisper-server}` dans `config.local.yaml`.
 
 ### 4.5 `text_filter.py` — filtre et mot d'éveil
 

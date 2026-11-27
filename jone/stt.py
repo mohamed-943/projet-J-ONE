@@ -33,6 +33,19 @@ class Transcription:
     language_prob: float = 1.0
 
 
+def choose_language(probs: dict[str, float], languages, default: str,
+                    margin: float) -> tuple[str, float]:
+    """Langue autorisée la plus probable et sa part parmi les langues autorisées ;
+    `default` si la détection hésite (part sous `margin`)."""
+    allowed = {lang: float(probs.get(lang, 0.0)) for lang in languages}
+    best = max(allowed, key=allowed.get)
+    total = sum(allowed.values())
+    share = allowed[best] / total if total else 0.0
+    if share < margin and default in allowed:
+        return default, share
+    return best, share
+
+
 def _load_model(model, device, compute_type, cpu_threads):
     from faster_whisper import WhisperModel
 
@@ -65,7 +78,7 @@ class WhisperSTT:
 
     @classmethod
     def from_config(cls, cfg: dict) -> "WhisperSTT":
-        return cls(**cfg["stt"])
+        return cls(**{k: v for k, v in cfg["stt"].items() if k not in ("backend", "server")})
 
     def _run(self, samples: np.ndarray, language: str | None):
         segments, info = self.model.transcribe(
@@ -83,18 +96,10 @@ class WhisperSTT:
         return list(segments), info
 
     def _choose(self, info) -> tuple[str, float]:
-        """Langue autorisée la plus probable ; `default_language` si la détection
-        hésite (part de la meilleure langue sous `language_margin`)."""
         probs = dict(getattr(info, "all_language_probs", None) or [])
         if not probs and getattr(info, "language", None):
             probs = {info.language: float(info.language_probability)}
-        allowed = {lang: probs.get(lang, 0.0) for lang in self.languages}
-        best = max(allowed, key=allowed.get)
-        total = sum(allowed.values())
-        share = allowed[best] / total if total else 0.0
-        if share < self.language_margin and self.default_language in allowed:
-            return self.default_language, share
-        return best, share
+        return choose_language(probs, self.languages, self.default_language, self.language_margin)
 
     def detect_language(self, samples: np.ndarray) -> tuple[str, float]:
         # Le générateur de segments n'est pas parcouru : seule la détection est calculée.
@@ -144,3 +149,13 @@ class WhisperSTT:
             language=language,
             language_prob=language_prob,
         )
+
+
+def create_stt(cfg: dict):
+    """faster-whisper (CPU ou GPU selon CTranslate2) ou whisper-server (whisper.cpp
+    compilé avec CUDA sur la Jetson)."""
+    if cfg["stt"].get("backend") == "whisper-server":
+        from .stt_server import WhisperServerSTT
+
+        return WhisperServerSTT.from_config(cfg)
+    return WhisperSTT.from_config(cfg)

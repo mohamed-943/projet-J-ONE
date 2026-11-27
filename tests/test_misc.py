@@ -166,3 +166,50 @@ def test_local_config_overrides(tmp_path, monkeypatch):
     cfg = config.load_config(tmp_path / "config.yaml")
     assert cfg["stt"]["model"] == "large-v3-turbo" and cfg["stt"]["device"] == "cpu"
     assert cfg["stt"]["languages"] == ["fr", "en"]
+
+
+def _server_stt(responses):
+    from jone.stt_server import WhisperServerSTT
+
+    stt = WhisperServerSTT.__new__(WhisperServerSTT)
+    stt.language, stt.languages, stt.default_language, stt.language_margin = None, ["fr", "en"], "fr", 0.65
+    calls = []
+
+    def fake_request(wav, language, with_probs, audio_s=30.0):
+        calls.append(language)
+        return responses.pop(0)
+
+    stt._request = fake_request
+    return stt, calls
+
+
+def test_whisper_server_keeps_auto_transcription_when_language_allowed():
+    res = {"language_probabilities": {"en": 0.9, "fr": 0.05},
+           "segments": [{"text": " Hello there.", "avg_logprob": -0.2, "no_speech_prob": 0.05}]}
+    stt, calls = _server_stt([res])
+    tr = stt.transcribe(np.zeros(1600, dtype=np.int16))
+    assert calls == ["auto"] and tr.language == "en" and tr.text == "Hello there."
+    assert tr.avg_logprob == -0.2 and tr.compression_ratio < 2.4
+
+
+def test_whisper_server_retranscribes_in_allowed_language():
+    first = {"language_probabilities": {"nn": 0.42, "en": 0.33, "fr": 0.25},
+             "segments": [{"text": " Hei.", "avg_logprob": -0.9, "no_speech_prob": 0.3}]}
+    second = {"segments": [{"text": " Bonjour.", "avg_logprob": -0.3, "no_speech_prob": 0.1}]}
+    stt, calls = _server_stt([first, second])
+    tr = stt.transcribe(np.zeros(1600, dtype=np.int16))
+    assert calls == ["auto", "fr"] and tr.text == "Bonjour." and tr.language == "fr"
+
+
+def test_whisper_server_empty_result():
+    stt, _ = _server_stt([{"language_probabilities": {"fr": 0.9}, "segments": []}])
+    tr = stt.transcribe(np.zeros(1600, dtype=np.int16))
+    assert tr.text == "" and tr.no_speech_prob == 1.0
+
+
+def test_audio_ctx_has_margin_and_bounds():
+    from jone.stt_server import audio_ctx_for
+
+    assert audio_ctx_for(2.85, 2.0, 384) == 384      # court : minimum
+    assert audio_ctx_for(10.0, 2.0, 384) == 640      # (10 + 2) s × 50, arrondi à 64
+    assert audio_ctx_for(40.0, 2.0, 384) == 1500     # jamais plus de 30 s

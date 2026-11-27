@@ -21,7 +21,7 @@ import _bootstrap  # noqa: F401
 from jone.audio_utils import to_pcm16k_mono
 from jone.config import load_config, resolve_path
 from jone.metrics import corpus_wer, summarize, wer
-from jone.stt import WhisperSTT
+from jone.stt import create_stt
 
 
 def load_wav_16k(path: Path) -> np.ndarray:
@@ -70,7 +70,7 @@ def main():
 
     mem_before = memory_report()
     t0 = time.perf_counter()
-    stt = WhisperSTT(**stt_cfg)
+    stt = create_stt(cfg)
     load_s = time.perf_counter() - t0
     stt.transcribe(np.zeros(16000, dtype=np.int16))  # préchauffage
 

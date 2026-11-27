@@ -48,7 +48,7 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
     kwargs = {}
     if not text_mode:
         from .audio_input import create_mic
-        from .stt import WhisperSTT
+        from .stt import create_stt
         from .text_filter import TranscriptFilter, WakeWordGate
         from .vad import SileroVAD, SpeechSegmenter
 
@@ -56,7 +56,7 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
         kwargs = dict(
             mic=create_mic(cfg),
             segmenter=SpeechSegmenter.from_config(SileroVAD(a["sample_rate"]), cfg),
-            stt=WhisperSTT.from_config(cfg),
+            stt=create_stt(cfg),
             text_filter=TranscriptFilter.from_config(cfg),
             wake=WakeWordGate.from_config(cfg),
             speech_end_delay_s=cfg["vad"]["min_silence_ms"] / 1000.0,

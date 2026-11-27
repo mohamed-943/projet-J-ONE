@@ -33,6 +33,17 @@ stt:                            # EF-02, ENF-02
   detect_model: tiny            # détection de langue par un petit modèle, puis une seule
                                 # passe du grand modèle (null : détection par ce dernier)
   cpu_threads: 0                # Whisper sur CPU : 0 = tous les cœurs
+  # faster-whisper | whisper-server. faster-whisper n'a pas de CUDA sous JetPack 5 :
+  # sur le robot, whisper-server (whisper.cpp compilé avec CUDA) transcrit sur le GPU.
+  backend: faster-whisper
+  server:                       # utilisé seulement si backend: whisper-server
+    url: http://127.0.0.1:8080  # lancé par le pipeline s'il ne répond pas
+    binary: ~/whisper.cpp/build/bin/whisper-server
+    model: ~/whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin
+    threads: 4
+    min_audio_ctx: 384          # fenêtre d'analyse réduite à l'énoncé (0 : 30 s) ;
+    audio_ctx_margin_s: 2.0     # sans marge, Whisper répète la fin de la phrase
+    startup_timeout_s: 60
 
 filter:                         # EF-03
   min_chars: 2

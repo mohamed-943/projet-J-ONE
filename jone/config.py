@@ -45,6 +45,16 @@ DEFAULTS: dict[str, Any] = {
         "language_margin": 0.65,
         "detect_model": "tiny",  # modèle rapide pour la détection de langue
         "cpu_threads": 0,  # 0 : tous les cœurs
+        "backend": "faster-whisper",  # faster-whisper | whisper-server (GPU de la Jetson)
+        "server": {
+            "url": "http://127.0.0.1:8080",
+            "binary": "~/whisper.cpp/build/bin/whisper-server",
+            "model": "~/whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin",
+            "threads": 4,
+            "min_audio_ctx": 384,
+            "audio_ctx_margin_s": 2.0,
+            "startup_timeout_s": 60.0,
+        },
     },
     "filter": {
         "min_chars": 2,
