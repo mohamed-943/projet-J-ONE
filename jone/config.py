@@ -73,6 +73,17 @@ DEFAULTS: dict[str, Any] = {
         "max_clarifications": 1,  # de suite ; ensuite le LLM répond
         "language_session_s": 120.0,  # langue de la conversation oubliée après ce délai
     },
+    "barge_in": {
+        "enabled": True,  # l'utilisateur peut couper la parole au robot
+        "keywords": ["sarah", "sara", "stop", "arrête", "arrete", "attends", "attendez",
+                     "tais-toi", "silence", "excuse-moi", "excusez-moi", "pardon", "wait",
+                     "hold on", "excuse me", "shut up", "enough"],
+        "window_s": 1.4,  # audio transcrit à chaque vérification
+        "hop_s": 0.5,  # intervalle entre deux vérifications
+        "min_speech_ratio": 0.3,  # part de parole (VAD) pour lancer une vérification
+        "min_new_words": 3,  # sans mot d'interruption : mots absents de la réponse
+        "min_logprob": -0.8,
+    },
     "wake_word": {
         "enabled": False,
         "words": ["sarah", "sara", "ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"],

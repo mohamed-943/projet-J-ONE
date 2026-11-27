@@ -14,6 +14,7 @@ import time
 from typing import Callable
 
 from .conversation import Conversation, load_system_prompt
+from .barge_in import echo_ratio
 from .dialogue import CLARIFY_REPLIES, LANGUAGE_SWITCH_REPLIES, language_command
 from .led import Led, State
 from .llm.router import LLMRouter, NoBackendAvailable, RouteInfo
@@ -60,7 +61,7 @@ class VoicePipeline:
                  mic=None, segmenter=None, stt=None, text_filter=None, wake=None,
                  speech_end_delay_s: float = 0.0, first_clause_chars: int = 0,
                  clarification: bool = True, max_clarifications: int = 1,
-                 language_session_s: float = 120.0,
+                 language_session_s: float = 120.0, barge_in=None,
                  clock: Callable[[], float] = time.perf_counter):
         self.router = router
         self.conversation = conversation
@@ -91,6 +92,12 @@ class VoicePipeline:
         self.language_session_s = language_session_s
         self._language: str | None = None
         self._last_turn = float("-inf")
+        # Interruption pendant que le robot parle (voir barge_in.py) ; après une
+        # interruption, le début de la phrase entendue est rendu au découpage, et
+        # la réponse coupée sert à écarter l'écho qui suivrait.
+        self.barge_in = barge_in
+        self._pending_audio = None
+        self._interrupted_reply: tuple[str, float] | None = None
         self.clock = clock
         self._stop = threading.Event()
 
@@ -160,6 +167,15 @@ class VoicePipeline:
         self.segmenter.reset()
         self.mic.resume()
         self.led.set_state(State.LISTENING)
+        if self._pending_audio is not None:
+            audio, self._pending_audio = self._pending_audio, None
+            n = self.segmenter_frame
+            for start in range(0, len(audio) - n + 1, n):
+                self.segmenter.process(audio[start : start + n])
+
+    @property
+    def segmenter_frame(self) -> int:
+        return getattr(self.barge_in, "frame_samples", 512)
 
     def _show_error(self) -> None:
         self.led.set_state(State.ERROR)
@@ -185,6 +201,8 @@ class VoicePipeline:
         }
 
         verdict = self.text_filter.check(tr)
+        if verdict.accepted and self._is_echo(tr.text):
+            verdict = type(verdict)(False, verdict.text, "écho du robot")
         if not verdict.accepted:
             log.info("Transcription rejetée (%s) : %r", verdict.reason, tr.text)
             self.exchange_log.write({**record, "statut": "rejete", "motif": verdict.reason})
@@ -216,6 +234,28 @@ class VoicePipeline:
         self._set_language(language)
         if self.wake:
             self.wake.mark_exchange(time.monotonic())
+
+    def _is_echo(self, text: str) -> bool:
+        """Juste après une interruption, la fin de la phrase coupée peut encore être
+        captée : on l'écarte si elle reprend les mots de la réponse interrompue."""
+        if not self._interrupted_reply:
+            return False
+        reply, at = self._interrupted_reply
+        self._interrupted_reply = None
+        return time.monotonic() - at < 3.0 and echo_ratio(text, reply) >= 0.8
+
+    def _wait_playback(self, monitor) -> bool:
+        """Attend la fin de la lecture ; True si l'utilisateur a interrompu."""
+        if monitor is None:
+            self.speaker.wait_until_done()
+            return False
+        while not self.speaker.wait_until_done(0.05):
+            if monitor.triggered.is_set():
+                break
+        if monitor.triggered.is_set():
+            self.speaker.stop()
+            return True
+        return False
 
     def reply_fixed(self, reply: str, language: str, record: dict, speech_end: float,
                     kind: str, user_text: str | None = None) -> str:
@@ -287,10 +327,18 @@ class VoicePipeline:
         # suivant reste identique à ce qu'Ollama a déjà calculé.
         sent_text = user_text + (UNCERTAIN_HINTS if uncertain else LANGUAGE_HINTS).get(language, "")
         messages = self.conversation.with_user(sent_text)
+        monitor = self.barge_in if self.mic is not None else None
+        if monitor is not None:
+            # Écoute pendant la réponse : l'utilisateur peut couper la parole au robot.
+            self.mic.flush()
+            self.mic.resume()
+            monitor.start(lambda: " ".join(spoken), language)
         try:
             stream = self.router.stream(self.system_prompt, messages, info, language=language)
             try:
                 for delta in stream:
+                    if monitor is not None and monitor.triggered.is_set():
+                        break
                     for sentence in splitter.feed(delta):
                         say(sentence)
                         if len(spoken) >= self.max_sentences:  # EF-06 : 3 phrases max
@@ -308,20 +356,31 @@ class VoicePipeline:
             status = "erreur_llm"
             say(NO_LLM_REPLIES.get(language, NO_LLM_REPLY), fallback=True)
 
-        if not spoken:
+        cut_early = monitor is not None and monitor.triggered.is_set()
+        if not spoken and not cut_early:
             status = "reponse_vide" if status == "ok" else status
             voice = None
             say(EMPTY_REPLIES.get(language, EMPTY_REPLY), fallback=True)
 
-        self.speaker.wait_until_done()
+        interrupted = self._wait_playback(monitor)
         first_audio = self.speaker.first_audio_at
-        time.sleep(self.tail_margin_s)  # écho résiduel de la pièce avant de réécouter
+        if monitor is not None:
+            monitor.stop()
+            self.mic.pause()
+        if interrupted or cut_early:
+            status = "interrompu"
+            record["interruption"] = {"motif": monitor.reason, "entendu": monitor.heard}
+            self._pending_audio = monitor.recent_audio(0.6)
+            self._interrupted_reply = (" ".join(spoken), time.monotonic())
+            log.info("Réponse interrompue (%s)", monitor.reason)
+        else:
+            time.sleep(self.tail_margin_s)  # écho résiduel de la pièce avant de réécouter
 
         if status == "erreur_llm":
             self._show_error()
 
         reply = " ".join(spoken)
-        if status == "ok" and not uncertain:
+        if status in ("ok", "interrompu") and not uncertain:
             # Un échange incertain n'entre pas dans l'historique : une phrase mal
             # reconnue ne doit pas fausser les réponses suivantes.
             self.conversation.commit(sent_text, reply)

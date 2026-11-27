@@ -63,6 +63,17 @@ dialogue:
   max_clarifications: 1         # de suite ; ensuite le LLM répond (prévenu de l'incertitude)
   language_session_s: 120       # langue de la conversation gardée, oubliée après 2 min sans échange
 
+barge_in:                       # interrompre le robot pendant qu'il parle (jone/barge_in.py)
+  enabled: true
+  # Mots qui coupent la parole au robot, sauf s'il les prononce lui-même (écho)
+  keywords: [sarah, sara, stop, arrête, arrete, attends, attendez, tais-toi, silence,
+             excuse-moi, excusez-moi, pardon, wait, hold on, excuse me, shut up, enough]
+  window_s: 1.4                 # audio transcrit à chaque vérification
+  hop_s: 0.5                    # intervalle entre deux vérifications (latence d'interruption)
+  min_speech_ratio: 0.3         # part de parole (VAD) dans la fenêtre pour vérifier
+  min_new_words: 3              # sans mot d'interruption : mots absents de la réponse en cours
+  min_logprob: -0.8             # confiance minimale pour ces mots nouveaux
+
 wake_word:                      # question ouverte : mot d'éveil ou écoute continue
   enabled: false
   words: ["sarah", "sara", "ultron", "ultrone", "j-one", "j one", "jone", "djiwan", "ji wan", "gi one"]

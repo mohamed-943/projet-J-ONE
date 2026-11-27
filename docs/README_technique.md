@@ -236,6 +236,23 @@ Deux cas ne passent pas par le LLM, parce que Qwen2.5 3B les traite mal :
 
 Le journal note `langue_conversation`, `incertain`, et dans `llm` : `commande_langue` ou `clarification`.
 
+### 4.5 ter `barge_in.py` — interrompre le robot
+
+Pendant une réponse, le micro reste ouvert : `BargeInMonitor` lit les trames dans son propre fil, avec son propre VAD. Quand au moins `min_speech_ratio` de la fenêtre (`window_s`, 1,4 s) est de la parole, il la transcrit toutes les `hop_s` (0,5 s), dans la langue de la conversation (énoncé court : une requête, environ 0,3 s sur le GPU).
+
+Le micro du G1 entend aussi la voix du robot. `is_interruption` compare donc la transcription à la réponse en cours. Il y a interruption si :
+- un mot de `barge_in.keywords` (« Sarah », « stop », « arrête », « attends », « wait »…) est entendu sans figurer dans la réponse ;
+- ou au moins `min_new_words` mots de plus de 2 lettres absents de la réponse sont entendus, avec `avg_logprob ≥ min_logprob`.
+
+Le reste est traité comme de l'écho. Sur interruption :
+1. la génération du LLM s'arrête ;
+2. `Speaker.stop()` coupe aussi la phrase en cours (`PlayStop`, envoi des blocs interrompu) ;
+3. l'échange est journalisé avec le statut `interrompu` (motif et texte entendu) ;
+4. les 0,6 dernières secondes entendues sont rendues au découpage, pour garder le début de la phrase de l'utilisateur ;
+5. dans les 3 s qui suivent, un énoncé qui reprend à 80 % les mots de la réponse coupée est rejeté (`écho du robot`).
+
+La réponse partielle entre dans l'historique. `barge_in.enabled: false` désactive l'écoute pendant les réponses.
+
 ### 4.6 `llm/` — modèles de langage
 
 L'interface commune est le protocole `LLMBackend` ([llm/base.py](../jone/llm/base.py)) :

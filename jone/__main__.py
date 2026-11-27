@@ -52,11 +52,18 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
         from .text_filter import TranscriptFilter, WakeWordGate
         from .vad import SileroVAD, SpeechSegmenter
 
+        from .barge_in import BargeInMonitor
+
         a = cfg["audio_input"]
+        mic = create_mic(cfg)
+        stt = create_stt(cfg)
         kwargs = dict(
-            mic=create_mic(cfg),
+            mic=mic,
             segmenter=SpeechSegmenter.from_config(SileroVAD(a["sample_rate"]), cfg),
-            stt=create_stt(cfg),
+            stt=stt,
+            # VAD séparé : le détecteur tourne dans son propre fil, pendant la réponse.
+            barge_in=(BargeInMonitor.from_config(cfg, mic, SileroVAD(a["sample_rate"]), stt)
+                      if cfg["barge_in"]["enabled"] else None),
             text_filter=TranscriptFilter.from_config(cfg),
             wake=WakeWordGate.from_config(cfg),
             speech_end_delay_s=cfg["vad"]["min_silence_ms"] / 1000.0,

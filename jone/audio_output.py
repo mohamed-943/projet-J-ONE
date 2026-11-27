@@ -28,12 +28,14 @@ class Speaker:
         self._lock = threading.Lock()
         self._pending = 0  # phrases en file ou en cours de lecture
         self._first_audio_at: float | None = None
+        self._interrupted = threading.Event()  # stop() : la phrase en cours s'arrête aussi
         self._thread = threading.Thread(target=self._run, name="speaker", daemon=True)
         self._thread.start()
 
     # --- API publique -----------------------------------------------------
     def begin_response(self) -> None:
         self._first_audio_at = None
+        self._interrupted.clear()
 
     def enqueue(self, pcm: bytes) -> None:
         if pcm:
@@ -52,6 +54,7 @@ class Speaker:
 
     def stop(self) -> None:
         """Interrompt la lecture et vide la file."""
+        self._interrupted.set()
         with self._lock:
             while True:
                 try:
@@ -108,7 +111,7 @@ class NullSpeaker(Speaker):
 
     def _play_blocking(self, pcm):
         self._mark_first_audio()
-        time.sleep(pcm_duration_s(pcm))
+        self._interrupted.wait(pcm_duration_s(pcm))
 
 
 class SoundDeviceSpeaker(Speaker):
@@ -148,6 +151,8 @@ class G1Speaker(Speaker):
 
     def _play_blocking(self, pcm):
         for offset in range(0, len(pcm), self.chunk_bytes):
+            if self._interrupted.is_set():
+                return
             chunk = pcm[offset : offset + self.chunk_bytes]
             now = time.monotonic()
             if self._play_end < now:  # le haut-parleur s'était tu : nouveau départ
@@ -159,13 +164,13 @@ class G1Speaker(Speaker):
             self._play_end += pcm_duration_s(chunk)
             # Ne pas prendre plus de `lead_seconds` d'avance sur la lecture.
             ahead = self._play_end - time.monotonic() - self.lead_seconds
-            if ahead > 0:
-                time.sleep(ahead)
+            if ahead > 0 and self._interrupted.wait(ahead):
+                return
 
     def _drain(self):
         remaining = self._play_end - time.monotonic()
         if remaining > 0:
-            time.sleep(remaining)
+            self._interrupted.wait(remaining)
 
     def _stop_playback(self):
         try:
