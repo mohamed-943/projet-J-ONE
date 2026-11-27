@@ -25,6 +25,7 @@ import atexit
 import io
 import logging
 import math
+import re
 import subprocess
 import time
 import wave
@@ -60,6 +61,19 @@ def audio_ctx_for(audio_s: float, margin_s: float, minimum: int) -> int:
     """Fenêtre de l'encodeur pour `audio_s` secondes, arrondie au multiple de 64."""
     ctx = math.ceil((audio_s + margin_s) * 50 / 64) * 64
     return min(FULL_CTX, max(minimum, ctx))
+
+
+_SENTENCES = re.compile(r"[^.!?…]+[.!?…]*")
+
+
+def collapse_repeats(text: str) -> str:
+    """Supprime les phrases répétées à l'identique à la suite (« A. A. B. » → « A. B. ») :
+    défaut connu de Whisper, qui ferait sinon rejeter une commande valide."""
+    out: list[str] = []
+    for sentence in (s.strip() for s in _SENTENCES.findall(text)):
+        if sentence and (not out or sentence.lower() != out[-1].lower()):
+            out.append(sentence)
+    return " ".join(out)
 
 
 def _compression_ratio(text: str) -> float:
@@ -197,7 +211,7 @@ class WhisperServerSTT:
 
         elapsed = (time.perf_counter() - t0) * 1000
         segments = [s for s in res.get("segments", []) if s.get("text", "").strip()]
-        text = " ".join(s["text"].strip() for s in segments).strip()
+        text = collapse_repeats(" ".join(s["text"].strip() for s in segments).strip())
         log.info("Transcription GPU en %.0f ms (langue %s, %.0f %%)", elapsed, language, language_prob * 100)
         if not segments:
             return Transcription("", no_speech_prob=1.0, audio_s=audio_s, elapsed_ms=elapsed,

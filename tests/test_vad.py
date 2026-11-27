@@ -38,10 +38,10 @@ def make(**kw):
 
 def test_detects_utterance_with_pre_roll_and_trims_silence():
     seq = frames(0.0, 10) + frames(0.9, 20) + frames(0.0, 10)
-    utts = run(make(), seq)
+    utts = run(make(post_roll_ms=96), seq)
     assert len(utts) == 1
-    # 3 trames de pré-enregistrement + 20 trames de parole, silence final retiré
-    assert len(utts[0]) == (3 + 20) * FRAME
+    # 3 trames de pré-enregistrement + 20 de parole + 3 de silence gardées, le reste retiré
+    assert len(utts[0]) == (3 + 20 + 3) * FRAME
 
 
 def test_ignores_short_noise_bursts():
@@ -72,3 +72,18 @@ def test_reset_clears_state():
     assert seg.in_speech
     seg.reset()
     assert not seg.in_speech
+
+
+def test_post_roll_keeps_some_trailing_silence():
+    import numpy as np
+
+    from jone.vad import SpeechSegmenter
+
+    probs = iter([0.9] * 20 + [0.0] * 30)
+    seg = SpeechSegmenter(lambda f: next(probs), min_silence_ms=640, post_roll_ms=320, pre_roll_ms=0)
+    frame = np.zeros(512, dtype=np.int16)
+    out = None
+    for _ in range(50):
+        out = seg.process(frame) if out is None else out
+    # 20 trames de parole + 10 trames (320 ms) de silence gardées
+    assert out is not None and len(out) == 30 * 512

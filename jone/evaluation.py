@@ -12,6 +12,10 @@ douteuses, mot d'éveil. On en tire quatre indicateurs :
 - FAR / FRR de la détection vocale, à deux niveaux : la parole (un bruit déclenche-t-il
   une réponse ? une phrase est-elle perdue ?) et le mot d'éveil.
 
+Le niveau de la voix et le rapport signal/bruit (SNR) de chaque enregistrement
+expliquent les résultats : en s'éloignant du robot, la voix baisse alors que le
+bruit de fond reste le même.
+
 Les proportions sont données avec leur intervalle de confiance de Wilson à 95 % :
 avec quelques dizaines d'enregistrements, l'incertitude n'est pas négligeable.
 """
@@ -22,6 +26,8 @@ import math
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 from .metrics import corpus_wer, summarize
 
@@ -64,11 +70,35 @@ class ItemResult:
     wake: bool = False  # mot d'éveil reconnu dans un énoncé accepté
     language: str | None = None
     stt_ms: list[float] = field(default_factory=list)
+    voice_db: float | None = None  # niveau de la voix (dBFS)
+    noise_db: float | None = None  # bruit de fond (dBFS)
+
+    @property
+    def snr_db(self) -> float | None:
+        if self.voice_db is None or self.noise_db is None:
+            return None
+        return self.voice_db - self.noise_db
 
     @property
     def detected(self) -> bool:
         """Le robot aurait répondu (en écoute continue)."""
         return bool(self.accepted)
+
+
+def audio_levels(audio: np.ndarray, frame: int = 512) -> tuple[float, float]:
+    """(niveau de la voix, bruit de fond) en dBFS, d'après l'énergie de trames de
+    32 ms : 90e centile pour la voix, 10e pour le bruit. Ne dépend pas du VAD, dont
+    on mesure justement les échecs."""
+    n = len(audio) // frame
+    if n == 0:
+        return -120.0, -120.0
+    frames = audio[: n * frame].astype(np.float64).reshape(n, frame) / 32768.0
+    db = 10 * np.log10(np.mean(frames ** 2, axis=1) + 1e-12)
+    return float(np.percentile(db, 90)), float(np.percentile(db, 10))
+
+
+def _median(values: list[float]) -> float | None:
+    return float(np.median(values)) if values else None
 
 
 def _fold(text: str) -> str:
@@ -119,6 +149,8 @@ def compute_metrics(results: list[ItemResult]) -> dict:
                                  len(commands)),
         "identification_langue": _rate(sum(r.language == r.item.langue for r in speech), len(speech)),
         "latence_stt_ms": summarize([ms for r in results for ms in r.stt_ms]),
+        "niveau_voix_db": _median([r.voice_db for r in speech if r.voice_db is not None]),
+        "snr_db": _median([r.snr_db for r in speech if r.snr_db is not None]),
         "parole": {
             "FRR": _rate(sum(not r.detected for r in speech), len(speech)),
             "FAR": _rate(sum(r.detected for r in noise), len(noise)),

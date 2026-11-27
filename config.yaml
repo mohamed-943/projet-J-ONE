@@ -19,6 +19,7 @@ vad:                            # EF-01
   min_speech_ms: 250            # plus court = bruit (porte, pas), ignoré
   min_silence_ms: 600           # silence qui marque la fin de la phrase
   pre_roll_ms: 300              # audio conservé avant le déclenchement
+  post_roll_ms: 300             # silence gardé après la phrase (coupée net, Whisper la répète)
   max_utterance_s: 15
 
 stt:                            # EF-02, ENF-02

@@ -25,7 +25,7 @@ import _bootstrap  # noqa: F401
 from _bootstrap import ROOT
 from bench_stt import load_wav_16k
 from jone.config import load_config, resolve_path
-from jone.evaluation import ItemResult, command_recognized, compute_metrics, load_protocol
+from jone.evaluation import ItemResult, audio_levels, command_recognized, compute_metrics, load_protocol
 from jone.metrics import summarize, wer
 from jone.stt import create_stt
 from jone.text_filter import TranscriptFilter, WakeWordGate
@@ -45,24 +45,34 @@ def segments(segmenter: SpeechSegmenter, audio: np.ndarray, frame: int, rate: in
             yield utterance
 
 
-def evaluate(cfg: dict, items, corpus: Path) -> list[ItemResult]:
-    a = cfg["audio_input"]
-    segmenter = SpeechSegmenter.from_config(SileroVAD(a["sample_rate"]), cfg)
-    stt = create_stt(cfg)
-    stt.warmup()
-    text_filter = TranscriptFilter.from_config(cfg)
-    wake_cfg = dict(cfg["wake_word"], enabled=True)  # évalué même si désactivé en écoute
-    wake = WakeWordGate.from_config({"wake_word": wake_cfg})
+class Frontend:
+    """VAD, Whisper, filtre et mot d'éveil, chargés une fois pour tout le corpus."""
 
+    def __init__(self, cfg: dict):
+        a = cfg["audio_input"]
+        self.rate, self.frame = a["sample_rate"], a["frame_samples"]
+        self.segmenter = SpeechSegmenter.from_config(SileroVAD(self.rate), cfg)
+        self.stt = create_stt(cfg)
+        self.stt.warmup()
+        self.text_filter = TranscriptFilter.from_config(cfg)
+        wake_cfg = dict(cfg["wake_word"], enabled=True)  # évalué même si désactivé en écoute
+        self.wake = WakeWordGate.from_config({"wake_word": wake_cfg})
+
+
+def evaluate(fe: Frontend, items, corpus: Path, verbose: bool = True) -> list[ItemResult]:
     results = []
     for item in items:
         path = corpus / f"{item.id}.wav"
         if not path.exists():
-            print(f"  {item.id} : absent, ignoré")
+            if verbose:
+                print(f"  {item.id} : absent, ignoré")
             continue
         r = ItemResult(item)
+        audio = load_wav_16k(path)
+        r.voice_db, r.noise_db = audio_levels(audio, fe.frame)
         texts, accepted = [], []
-        for utt in segments(segmenter, load_wav_16k(path), a["frame_samples"], a["sample_rate"]):
+        stt, text_filter, wake = fe.stt, fe.text_filter, fe.wake
+        for utt in segments(fe.segmenter, audio, fe.frame, fe.rate):
             r.segments += 1
             tr = stt.transcribe(utt)
             r.stt_ms.append(tr.elapsed_ms)
@@ -77,8 +87,20 @@ def evaluate(cfg: dict, items, corpus: Path) -> list[ItemResult]:
         r.transcription = " ".join(t for t in texts if t).strip()
         r.accepted = " ".join(accepted).strip()
         results.append(r)
-        print(f"  {item.id} {item.type:10s} {r.segments} énoncé(s) → {r.accepted or '∅'}")
+        if verbose:
+            print(f"  {item.id} {item.type:10s} {r.segments} énoncé(s), SNR {r.snr_db:4.1f} dB → "
+                  f"{r.accepted or '∅'}")
     return results
+
+
+def apply_vad_threshold(cfg: dict, threshold: float | None) -> None:
+    """Seuil de détection de parole d'essai ; le seuil de fin de parole garde le
+    même écart (hystérésis)."""
+    if threshold is None:
+        return
+    gap = cfg["vad"]["threshold"] - cfg["vad"]["neg_threshold"]
+    cfg["vad"]["threshold"] = threshold
+    cfg["vad"]["neg_threshold"] = max(0.05, threshold - gap)
 
 
 def end_to_end(log_paths: list[str], backend: str, since: str = "") -> dict:
@@ -102,6 +124,10 @@ def pct(rate: dict) -> str:
     return f"{100 * rate['taux']:.1f} % ({rate['k']}/{rate['n']}, IC95 {100 * lo:.0f}–{100 * hi:.0f} %)"
 
 
+def db(v) -> str:
+    return "–" if v is None else f"{v:.1f} dB"
+
+
 def ms(v) -> str:
     return "–" if v is None else f"{v:.0f} ms"
 
@@ -119,7 +145,8 @@ def report(cfg: dict, metrics: dict, e2e: dict, backend: str, results: list[Item
         "",
         f"Date : {datetime.now():%Y-%m-%d %H:%M}  ",
         f"Transcription : {moteur} ; LLM : {cfg['llm']['local']['model'] if backend == 'local' else backend}  ",
-        f"Enregistrements évalués : {len(results)} (protocole : docs/protocole_evaluation.md)",
+        f"Enregistrements évalués : {len(results)} (protocole : docs/protocole_evaluation.md) ; "
+        f"seuil VAD {cfg['vad']['threshold']}",
         "",
         "## 1. WER — qualité de transcription",
         "",
@@ -130,7 +157,8 @@ def report(cfg: dict, metrics: dict, e2e: dict, backend: str, results: list[Item
     lines += [f"| {lang} | {100 * v:.1f} % |" for lang, v in w.items() if lang not in ("global", "n")]
     lines += [
         "",
-        f"Identification de la langue : {pct(metrics['identification_langue'])}",
+        f"Identification de la langue : {pct(metrics['identification_langue'])}  ",
+        f"Niveau de la voix (médiane) : {db(metrics['niveau_voix_db'])} ; SNR (médiane) : {db(metrics['snr_db'])}",
         "",
         "## 2. Recognition Accuracy — reconnaissance des commandes",
         "",
@@ -182,12 +210,14 @@ def main():
     p.add_argument("--logs", default="logs/echanges-*.jsonl")
     p.add_argument("--llm", default="local", help="modèle dont on lit la latence de bout en bout")
     p.add_argument("--depuis", default="", help="ne compter que les échanges à partir de cet horodatage")
+    p.add_argument("--seuil-vad", type=float, help="essayer un autre seuil de détection de parole (vad.threshold)")
     p.add_argument("--out", help="rapport Markdown (défaut : docs/evaluation_<llm>-<date>.md)")
     args = p.parse_args()
 
     cfg = load_config(args.config)
+    apply_vad_threshold(cfg, args.seuil_vad)
     items = load_protocol(ROOT / args.protocole)
-    results = evaluate(cfg, items, Path(args.corpus))
+    results = evaluate(Frontend(cfg), items, Path(args.corpus))
     metrics = compute_metrics(results)
     e2e = end_to_end(sorted(glob.glob(str(ROOT / args.logs))), args.llm, args.depuis)
 

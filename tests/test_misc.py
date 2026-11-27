@@ -235,3 +235,12 @@ def test_filter_rejects_non_latin_script():
     f = TranscriptFilter()
     assert f.check(Transcription("骨頭骨", avg_logprob=-0.5)).reason == "écriture non latine"
     assert f.check(Transcription("Ça va très bien, merci !", avg_logprob=-0.2)).accepted
+
+
+def test_collapse_repeated_sentences():
+    from jone.stt_server import collapse_repeats
+
+    assert collapse_repeats("Sarah, stop talking. Sarah, stop talking. Sarah, stop talking.") == "Sarah, stop talking."
+    assert collapse_repeats("Bonjour ! Ça va ? Ça va ?") == "Bonjour ! Ça va ?"
+    assert collapse_repeats("Oui. Non. Oui.") == "Oui. Non. Oui."
+    assert collapse_repeats("Quelle heure est-il") == "Quelle heure est-il"

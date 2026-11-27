@@ -92,3 +92,34 @@ Sur le robot, dans `~/projet-J-ONE` avec le venv activé :
 - La Recognition Accuracy porte sur la reconnaissance de la consigne (mot d'éveil et mots-clés), pas sur la qualité de la réponse du LLM.
 - Les bruits du protocole ne couvrent pas tous les environnements. Pour une démonstration dans une salle pleine, ajouter des enregistrements de conversations lointaines.
 - La latence de bout en bout dépend du LLM et de la longueur des réponses : elle se mesure en conversation réelle, pas sur le corpus.
+
+## 5. Distance d'écoute
+
+On cherche la distance maximale à laquelle le robot comprend une personne qui parle d'une voix normale de conversation. Le protocole court `tests/protocole_distance.tsv` (10 phrases, 8 commandes, 1 silence, mêmes textes que le protocole principal) est enregistré à chaque distance.
+
+**Conditions** (à noter dans le rapport) :
+
+- distance mesurée au mètre ruban, de la bouche du locuteur à la tête du robot ;
+- locuteur face au robot, voix normale de conversation : ne pas forcer la voix en s'éloignant ;
+- même pièce, même état du robot (assis ou debout : les ventilateurs changent le bruit de fond) ;
+- distances : 0,5 m, 1 m, 2 m, 3 m, puis 4 et 5 m si 3 m passe encore.
+
+**Enregistrement**, un dossier par distance, nommé d'après elle :
+
+```bash
+for d in 0.5m 1m 2m 3m; do
+  echo "=== Placez-vous à $d du robot ==="
+  python tools/enregistrer_corpus.py --protocole tests/protocole_distance.tsv \
+      --out corpus/distance/personne1/$d --input g1_multicast
+done
+```
+
+**Analyse** :
+
+```bash
+python tools/evaluation_distance.py --corpus corpus/distance/personne1 --seuils-vad 0.5 0.4 0.3
+```
+
+Pour chaque distance, le rapport donne le WER, le FRR, la reconnaissance des commandes, le niveau de la voix et le SNR (voix moins bruit de fond, en dB). La **distance maximale utilisable** est la plus grande pour laquelle cette distance et toutes les plus courtes respectent WER ≤ 10 % et FRR ≤ 10 % (modifiables avec `--seuil-wer` et `--seuil-frr`). `--seuils-vad` compare plusieurs seuils du détecteur de parole sur les mêmes enregistrements : un seuil plus bas porte plus loin, mais il faut vérifier sur le corpus principal qu'il ne fait pas monter le FAR. Les données sont aussi écrites en CSV, pour tracer les courbes WER et SNR selon la distance.
+
+**Validation de l'outil** : une simulation (voix de synthèse atténuée de 6 dB par doublement de distance, mêlée au bruit de fond réel de la salle enregistré par le robot, −42 dBFS) donne un WER ≤ 1 % jusqu'à 5 m pour un SNR de 13,5 dB. Elle est optimiste : ni écho de la salle, ni voix réelle. Seule la mesure avec des personnes fait foi.

@@ -32,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
         "min_speech_ms": 250,
         "min_silence_ms": 600,
         "pre_roll_ms": 300,
+        "post_roll_ms": 300,
         "max_utterance_s": 15.0,
     },
     "stt": {

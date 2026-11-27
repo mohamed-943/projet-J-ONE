@@ -48,6 +48,7 @@ class SpeechSegmenter:
         min_speech_ms: int = 250,
         min_silence_ms: int = 600,
         pre_roll_ms: int = 300,
+        post_roll_ms: int = 300,
         max_utterance_s: float = 15.0,
     ):
         self.vad = vad
@@ -57,6 +58,9 @@ class SpeechSegmenter:
         self.min_speech_frames = max(1, round(min_speech_ms / frame_ms))
         self.min_silence_frames = max(1, round(min_silence_ms / frame_ms))
         self.max_frames = max(1, round(max_utterance_s * 1000 / frame_ms))
+        # Silence gardé après la phrase : coupée net, Whisper la répète souvent
+        # (2 phrases sur 54 répétées sans ce silence, 0 avec 200 ms ou plus).
+        self.post_roll_frames = max(0, round(post_roll_ms / frame_ms))
         self._pre_roll: deque[np.ndarray] = deque(maxlen=max(0, round(pre_roll_ms / frame_ms)))
         self.reset()
 
@@ -107,7 +111,8 @@ class SpeechSegmenter:
             return None
 
         keep = self._speech_frames >= self.min_speech_frames
-        frames = self._frames[: len(self._frames) - self._silence_run] if ended else self._frames
+        trailing = max(0, self._silence_run - self.post_roll_frames)
+        frames = self._frames[: len(self._frames) - trailing] if ended else self._frames
         self.reset()
         if not keep or not frames:
             return None

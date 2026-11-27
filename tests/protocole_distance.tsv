@@ -1,0 +1,23 @@
+# Protocole de mesure de la distance (docs/protocole_evaluation.md, section 5).
+# Sous-ensemble du protocole principal (mêmes identifiants et mêmes textes), enregistré
+# à chaque distance : 10 phrases, 8 commandes, 1 silence (bruit de fond de la pièce).
+# id	type	langue	texte	mots_cles
+p01	phrase	fr	Bonjour, comment tu t'appelles ?
+p02	phrase	fr	Qu'est-ce que tu sais faire exactement ?
+p04	phrase	fr	Quelle est la capitale de l'Australie ?
+p07	phrase	fr	J'aimerais savoir qui t'a construit.
+p12	phrase	fr	Quelle est la différence entre un robot et une intelligence artificielle ?
+p13	phrase	en	Hello, what is your name?
+p14	phrase	en	What can you do exactly?
+p16	phrase	en	What is the capital of Australia?
+p19	phrase	en	I would like to know who built you.
+p22	phrase	en	What is the difference between a robot and artificial intelligence?
+c01	commande	fr	Sarah, présente-toi.	présente
+c03	commande	fr	Sarah, parle plus fort.	fort
+c05	commande	fr	Sarah, arrête de parler.	arrête
+c07	commande	fr	Sarah, parle en anglais.	anglais
+c09	commande	en	Sarah, introduce yourself.	introduce
+c11	commande	en	Sarah, speak louder.	louder
+c13	commande	en	Sarah, stop talking.	stop
+c15	commande	en	Sarah, speak French.	french
+b01	bruit	-	Silence de la pièce : ne rien dire.

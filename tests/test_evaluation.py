@@ -48,3 +48,28 @@ def test_metrics_far_frr_and_accuracy():
     assert m["mot_eveil"]["FRR"]["k"] == 1 and m["mot_eveil"]["FAR"]["k"] == 0
     assert m["identification_langue"]["taux"] == 1.0
     assert 0 < m["wer"]["global"] < 0.5 and "en" in m["wer"]
+
+
+def test_audio_levels_and_snr():
+    import numpy as np
+
+    from jone.evaluation import audio_levels
+
+    rng = np.random.default_rng(0)
+    noise = rng.normal(0, 30, 16000)
+    voice = rng.normal(0, 3000, 16000)  # 40 dB au-dessus
+    v, n = audio_levels(np.concatenate([noise, voice]).astype(np.int16))
+    assert 37 < v - n < 43
+
+
+def test_distance_folders_and_max_distance(tmp_path):
+    from evaluation_distance import distance_dirs, max_distance
+
+    for name in ("3m", "0.5m", "150cm", "1m", "notes"):
+        (tmp_path / name).mkdir()
+    assert [d for d, _ in distance_dirs(tmp_path)] == [0.5, 1.0, 1.5, 3.0]
+
+    rows = [{"distance_m": 0.5, "wer": 0.02, "frr": 0.0}, {"distance_m": 1.0, "wer": 0.05, "frr": 0.0},
+            {"distance_m": 2.0, "wer": 0.18, "frr": 0.1}, {"distance_m": 3.0, "wer": 0.06, "frr": 0.0}]
+    # 3 m passe, mais 2 m échoue : la distance retenue s'arrête à 1 m
+    assert max_distance(rows, 0.10, 0.10) == 1.0
