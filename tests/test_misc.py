@@ -213,9 +213,9 @@ def test_whisper_server_empty_result():
 def test_audio_ctx_has_margin_and_bounds():
     from jone.stt_server import audio_ctx_for
 
-    assert audio_ctx_for(2.85, 2.0, 384) == 384      # court : minimum
-    assert audio_ctx_for(10.0, 2.0, 384) == 640      # (10 + 2) s × 50, arrondi à 64
-    assert audio_ctx_for(40.0, 2.0, 384) == 1500     # jamais plus de 30 s
+    assert audio_ctx_for(2.85, 3.0, 512) == 512      # court : minimum
+    assert audio_ctx_for(10.0, 3.0, 512) == 704      # (10 + 3) s × 50, arrondi à 64
+    assert audio_ctx_for(40.0, 3.0, 512) == 1500     # jamais plus de 30 s
 
 
 def test_whisper_server_retranscribes_when_probs_disagree_with_transcription():

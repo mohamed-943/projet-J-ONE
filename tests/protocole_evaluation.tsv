@@ -1,0 +1,61 @@
+# Protocole d'évaluation (docs/protocole_evaluation.md). Colonnes séparées par des tabulations :
+# id	type	langue	texte	mots_cles
+# type : phrase (WER) | commande (WER + reconnaissance, commence par « Sarah ») |
+#        hors_cible (parole qui ne s'adresse pas au robot) | bruit (aucune parole, texte = consigne)
+# mots_cles : mots qui doivent figurer dans la transcription pour que la commande soit reconnue (séparés par |)
+p01	phrase	fr	Bonjour, comment tu t'appelles ?
+p02	phrase	fr	Qu'est-ce que tu sais faire exactement ?
+p03	phrase	fr	Peux-tu me raconter une blague sur les robots ?
+p04	phrase	fr	Quelle est la capitale de l'Australie ?
+p05	phrase	fr	Explique-moi comment fonctionne un arc-en-ciel.
+p06	phrase	fr	Combien de temps peut fonctionner ta batterie ?
+p07	phrase	fr	J'aimerais savoir qui t'a construit.
+p08	phrase	fr	Est-ce que tu peux parler d'autres langues que le français ?
+p09	phrase	fr	Donne-moi une idée de recette pour ce soir.
+p10	phrase	fr	Pourquoi le ciel est-il bleu pendant la journée ?
+p11	phrase	fr	Je m'appelle Awa et je suis étudiante en robotique.
+p12	phrase	fr	Quelle est la différence entre un robot et une intelligence artificielle ?
+p13	phrase	en	Hello, what is your name?
+p14	phrase	en	What can you do exactly?
+p15	phrase	en	Can you tell me a joke about robots?
+p16	phrase	en	What is the capital of Australia?
+p17	phrase	en	Explain how a rainbow works.
+p18	phrase	en	How long can your battery last?
+p19	phrase	en	I would like to know who built you.
+p20	phrase	en	Why is the sky blue during the day?
+p21	phrase	en	My name is Awa and I study robotics.
+p22	phrase	en	What is the difference between a robot and artificial intelligence?
+c01	commande	fr	Sarah, présente-toi.	présente
+c02	commande	fr	Sarah, quelle heure est-il ?	heure
+c03	commande	fr	Sarah, parle plus fort.	fort
+c04	commande	fr	Sarah, répète s'il te plaît.	répète
+c05	commande	fr	Sarah, arrête de parler.	arrête
+c06	commande	fr	Sarah, raconte-moi une blague.	blague
+c07	commande	fr	Sarah, parle en anglais.	anglais
+c08	commande	fr	Sarah, qui t'a créée ?	cré
+c09	commande	en	Sarah, introduce yourself.	introduce
+c10	commande	en	Sarah, what time is it?	time
+c11	commande	en	Sarah, speak louder.	louder
+c12	commande	en	Sarah, say that again.	again
+c13	commande	en	Sarah, stop talking.	stop
+c14	commande	en	Sarah, tell me a joke.	joke
+c15	commande	en	Sarah, speak French.	french
+c16	commande	en	Sarah, who created you?	created
+h01	hors_cible	fr	On mange où ce midi ?
+h02	hors_cible	fr	Tu as fini le rapport pour demain ?
+h03	hors_cible	fr	Il fait vraiment froid dans cette salle.
+h04	hors_cible	fr	Passe-moi le câble Ethernet s'il te plaît.
+h05	hors_cible	fr	La réunion commence à quinze heures.
+h06	hors_cible	en	Where are we having lunch today?
+h07	hors_cible	en	Did you finish the report for tomorrow?
+h08	hors_cible	en	It is really cold in this room.
+h09	hors_cible	en	Can you pass me the Ethernet cable please?
+h10	hors_cible	en	The meeting starts at three o'clock.
+b01	bruit	-	Silence de la pièce : ne rien dire.
+b02	bruit	-	Marcher autour du robot.
+b03	bruit	-	Ouvrir et fermer une porte.
+b04	bruit	-	Taper sur un clavier près du robot.
+b05	bruit	-	Applaudir trois fois.
+b06	bruit	-	Faire tomber un objet léger (stylo, cahier).
+b07	bruit	-	Musique instrumentale sur un téléphone, à un mètre.
+b08	bruit	-	Robot debout (ventilateurs et moteurs), sans parler.

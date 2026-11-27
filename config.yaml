@@ -41,8 +41,8 @@ stt:                            # EF-02, ENF-02
     binary: ~/whisper.cpp/build/bin/whisper-server
     model: ~/whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin
     threads: 4
-    min_audio_ctx: 384          # fenêtre d'analyse réduite à l'énoncé (0 : 30 s) ;
-    audio_ctx_margin_s: 2.0     # sans marge, Whisper répète la fin de la phrase
+    min_audio_ctx: 512          # fenêtre d'analyse réduite à l'énoncé (0 : 30 s) ;
+    audio_ctx_margin_s: 3.0     # plus serré, Whisper répète ou déforme les phrases
     startup_timeout_s: 60
 
 filter:                         # EF-03

@@ -171,13 +171,14 @@ La langue est choisie parmi `stt.languages` (`fr`, `en`) par `choose_language` :
 
 **`whisper-server`** (`WhisperServerSTT`, robot) : whisper.cpp compilé avec CUDA sur la Jetson. Le pipeline lance `stt.server.binary` s'il ne répond pas sur `stt.server.url`, avec `-nf` (pas de nouveaux décodages). L'audio est envoyé en WAV sur `/inference`, avec `audio_ctx` réduit à la durée de l'énoncé plus `audio_ctx_margin_s` (au moins `min_audio_ctx`) : l'encodeur n'analyse plus 30 s d'audio pour une phrase de 3 s. Sans cette marge, Whisper répète la fin de la phrase. `compression_ratio`, que whisper.cpp ne fournit pas, est recalculé sur le texte.
 
-Mesures sur la Jetson Orin, phrase de 3 s, détection de langue comprise :
+Mesures sur la Jetson Orin, détection de langue comprise (48 phrases françaises et anglaises du protocole d'évaluation, voix de synthèse) :
 
-| Moteur | Modèle | Temps |
-|---|---|---|
-| faster-whisper, CPU (8 cœurs) | small | 3,4 à 4,6 s |
-| whisper-server, GPU, fenêtre de 30 s | large-v3-turbo q5_0 | 2,3 s |
-| whisper-server, GPU, `audio_ctx` | large-v3-turbo q5_0 | 0,6 s |
+| Moteur | Modèle | WER | Temps (p50) |
+|---|---|---|---|
+| faster-whisper, CPU (8 cœurs) | small | – | 3,4 à 4,6 s |
+| whisper-server, GPU, fenêtre de 30 s | large-v3-turbo q5_0 | 3,6 % | 2,3 s |
+| whisper-server, GPU, `audio_ctx` min 384, marge 2 s | large-v3-turbo q5_0 | 60 % (répétitions) | 0,6 s |
+| whisper-server, GPU, `audio_ctx` min 512, marge 3 s (défaut) | large-v3-turbo q5_0 | 2,6 % | 0,8 s |
 
 Installation sur la Jetson (JetPack 5, CUDA 11.4) :
 

@@ -7,9 +7,12 @@ envoyé en HTTP. Si le serveur ne répond pas au démarrage, il est lancé ici e
 avec le pipeline.
 
 Vitesse : l'encodeur de Whisper analyse toujours une fenêtre de 30 s. `audio_ctx`
-la réduit à la durée de l'énoncé plus une marge : 0,4 s au lieu de 0,9 s pour une
-phrase de 3 s avec large-v3-turbo (mesuré sur la Jetson Orin). Sans marge suffisante,
-Whisper répète la fin de la phrase ; d'où `min_audio_ctx` et `audio_ctx_margin_s`.
+la réduit à la durée de l'énoncé plus une marge. Mesuré sur la Jetson Orin avec
+large-v3-turbo, 48 phrases du protocole d'évaluation (tests/protocole_evaluation.tsv) :
+
+    fenêtre de 30 s          WER 3,6 %, 2,3 s par phrase
+    min 384, marge 2 s       WER 60 %, 0,6 s : phrases répétées ou déformées
+    min 512, marge 3 s       WER 2,6 %, 0,8 s  ← valeurs par défaut
 
 Langue : une requête en détection automatique renvoie aussi les probabilités de
 chaque langue ; si la langue retenue parmi `languages` n'est pas celle que Whisper a
@@ -68,7 +71,7 @@ def _compression_ratio(text: str) -> float:
 class WhisperServerSTT:
     def __init__(self, url="http://127.0.0.1:8080", binary=None, model=None, threads=4,
                  language=None, languages=("fr", "en"), default_language="fr",
-                 language_margin=0.65, audio_ctx_margin_s=2.0, min_audio_ctx=384,
+                 language_margin=0.65, audio_ctx_margin_s=3.0, min_audio_ctx=512,
                  startup_timeout_s=60.0, request_timeout_s=30.0, log_dir="logs"):
         import httpx
 
@@ -101,8 +104,8 @@ class WhisperServerSTT:
             languages=s.get("languages", ("fr", "en")),
             default_language=s.get("default_language", "fr"),
             language_margin=s.get("language_margin", 0.65),
-            audio_ctx_margin_s=server.get("audio_ctx_margin_s", 2.0),
-            min_audio_ctx=server.get("min_audio_ctx", 384),
+            audio_ctx_margin_s=server.get("audio_ctx_margin_s", 3.0),
+            min_audio_ctx=server.get("min_audio_ctx", 512),
             startup_timeout_s=server.get("startup_timeout_s", 60.0),
             log_dir=resolve_path(cfg["logging"]["dir"]),
         )
