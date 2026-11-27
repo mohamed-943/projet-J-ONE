@@ -26,7 +26,7 @@ def parse_args(argv=None):
     p.add_argument("--no-local", action="store_true", help="désactiver le LLM de secours")
     p.add_argument("--output", choices=["g1", "sounddevice", "none"],
                    help="surcharger audio_output.backend")
-    p.add_argument("--input", choices=["g1_multicast", "sounddevice"],
+    p.add_argument("--input", choices=["g1_multicast", "sounddevice", "udp", "alsa"],
                    help="surcharger audio_input.backend")
     p.add_argument("--led", choices=["g1", "console", "none"], help="surcharger led.backend")
     return p.parse_args(argv)

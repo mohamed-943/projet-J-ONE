@@ -12,6 +12,10 @@ audio_input:
   g1_multicast_group: 239.168.123.161
   g1_multicast_port: 5555
   g1_local_ip: 192.168.123.164  # IP de la Jetson sur le réseau interne du robot
+  # Si le micro du G1 ne marche pas : backend udp (micro du PC envoyé par
+  # tools/micro_pc.py) ou alsa (micro USB branché sur le robot, voir arecord -L)
+  udp_port: 5556
+  alsa_device: default
 
 vad:                            # EF-01
   threshold: 0.5                # probabilité de parole qui déclenche l'enregistrement

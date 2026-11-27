@@ -25,6 +25,8 @@ DEFAULTS: dict[str, Any] = {
         "g1_multicast_port": 5555,
         "g1_local_ip": "192.168.123.164",
         "queue_max_frames": 500,
+        "udp_port": 5556,  # backend udp : micro du PC (tools/micro_pc.py)
+        "alsa_device": "default",  # backend alsa : micro USB (arecord -L pour la liste)
     },
     "vad": {
         "threshold": 0.5,
