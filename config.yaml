@@ -52,6 +52,9 @@ filter:                         # EF-03
   min_avg_logprob: -1.0
   max_compression_ratio: 2.4
   blacklist: []                 # phrases parasites supplémentaires à rejeter
+  # Confiance de Whisper (avg_logprob), seul indicateur fiable avec whisper-server :
+  reject_avg_logprob: -1.1      # en dessous : rejeté
+  uncertain_avg_logprob: -0.8   # en dessous : accepté mais incertain (LLM prévenu, hors historique)
 
 wake_word:                      # question ouverte : mot d'éveil ou écoute continue
   enabled: false

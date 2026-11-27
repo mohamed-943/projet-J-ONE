@@ -14,7 +14,28 @@ def test_accepts_normal_sentence():
 def test_rejects_empty_and_punctuation():
     assert not check("").accepted
     assert not check(" ... ").accepted
-    assert check("♪").reason == "vide"
+    assert check("♪").reason == "son non verbal"
+
+
+def test_rejects_non_verbal_annotations_and_keeps_words_around_them():
+    # vus sur le robot : « *cris* » envoyé au LLM
+    for text in ("*cris*", "[Musique]", "(rires)", "*applaudissements* ♪"):
+        assert check(text, avg_logprob=-0.3).reason == "son non verbal", text
+    r = check("*rires* Bonjour Sarah", avg_logprob=-0.3)
+    assert r.accepted and r.text == "Bonjour Sarah"
+
+
+def test_rejects_multi_voice_dialogue():
+    assert check("- Le déjeuner le matériel ? - Tout mal.", avg_logprob=-0.4).reason == "plusieurs voix"
+    assert check("Bonjour - comment ça va ?", avg_logprob=-0.2).accepted
+
+
+def test_confidence_levels():
+    assert check("The octodino", avg_logprob=-1.49).reason == "confiance trop faible"
+    r = check("Est-ce que les gombras se lèvés?", avg_logprob=-0.97)
+    assert r.accepted and r.uncertain
+    r = check("Comment tu t'appelles ?", avg_logprob=-0.3)
+    assert r.accepted and not r.uncertain
 
 
 def test_rejects_known_hallucinations():

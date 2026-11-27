@@ -63,6 +63,8 @@ DEFAULTS: dict[str, Any] = {
         "min_avg_logprob": -1.0,
         "max_compression_ratio": 2.4,
         "blacklist": [],
+        "reject_avg_logprob": -1.1,
+        "uncertain_avg_logprob": -0.8,
     },
     "wake_word": {
         "enabled": False,

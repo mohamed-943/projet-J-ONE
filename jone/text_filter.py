@@ -4,6 +4,13 @@ français et en anglais.
 Whisper « hallucine » des phrases typiques des sous-titres sur du bruit ou du
 silence ; on les rejette avant tout appel au LLM, comme les transcriptions à
 faible confiance ou anormalement répétitives.
+
+Confiance : `no_speech_prob` vaut toujours 0 avec whisper-server (whisper.cpp le
+calcule après le prompt complet, pas après le jeton de début : 72 énoncés sur 72 à
+0 sur la Jetson). Le seul indicateur fiable dans les deux moteurs est donc
+`avg_logprob` : sous `reject_avg_logprob`, l'énoncé est rejeté ; entre ce seuil et
+`uncertain_avg_logprob`, il est accepté mais marqué incertain (le LLM est prévenu
+et l'échange n'entre pas dans l'historique).
 """
 
 from __future__ import annotations
@@ -59,6 +66,11 @@ def normalize(text: str) -> str:
 
 
 _SUSPICIOUS = {normalize(s) for s in SUSPICIOUS_SHORT}
+# Annotations de sons non verbaux que Whisper écrit à la place de mots :
+# *cris*, [Musique], (rires), ♪.
+_ANNOTATION = re.compile(r"\*[^*]*\*|\[[^\]]*\]|\([^)]*\)|[♪♫]+")
+# Dialogue à plusieurs voix : « - Le déjeuner ? - Tout mal. »
+_DIALOGUE = re.compile(r"^\s*-\s*\S.*\s-\s*\S")
 
 
 @dataclass
@@ -66,12 +78,16 @@ class FilterResult:
     accepted: bool
     text: str
     reason: str = ""
+    uncertain: bool = False  # accepté, mais confiance faible
 
 
 class TranscriptFilter:
     def __init__(self, min_chars=2, max_no_speech_prob=0.6, min_avg_logprob=-1.0,
-                 max_compression_ratio=2.4, blacklist=None):
+                 max_compression_ratio=2.4, blacklist=None, reject_avg_logprob=-1.1,
+                 uncertain_avg_logprob=-0.8):
         self.min_chars = min_chars
+        self.reject_avg_logprob = reject_avg_logprob
+        self.uncertain_avg_logprob = uncertain_avg_logprob
         self.max_no_speech_prob = max_no_speech_prob
         self.min_avg_logprob = min_avg_logprob
         self.max_compression_ratio = max_compression_ratio
@@ -82,12 +98,13 @@ class TranscriptFilter:
         return cls(**cfg["filter"])
 
     def check(self, t: Transcription) -> FilterResult:
-        text = re.sub(r"\s+", " ", t.text).strip()
+        raw = re.sub(r"\s+", " ", t.text).strip()
+        text = re.sub(r"\s+", " ", _ANNOTATION.sub(" ", raw)).strip()
         norm = normalize(text)
         letters = sum(c.isalnum() for c in norm)
 
         if letters < self.min_chars:
-            return FilterResult(False, text, "vide")
+            return FilterResult(False, raw, "son non verbal" if text != raw else "vide")
         if _mostly_non_latin(text):
             # Le robot parle français et anglais : du chinois ou du cyrillique vient
             # d'un bruit que Whisper a pris pour une autre langue.
@@ -103,7 +120,11 @@ class TranscriptFilter:
             return FilterResult(False, text, "texte répétitif")
         if _has_repeated_ngram(norm):
             return FilterResult(False, text, "boucle de répétition")
-        return FilterResult(True, text)
+        if _DIALOGUE.search(text):
+            return FilterResult(False, text, "plusieurs voix")
+        if t.avg_logprob < self.reject_avg_logprob:
+            return FilterResult(False, text, "confiance trop faible")
+        return FilterResult(True, text, uncertain=t.avg_logprob < self.uncertain_avg_logprob)
 
 
 def _mostly_non_latin(text: str) -> bool:

@@ -37,6 +37,12 @@ LANGUAGE_HINTS = {
     "fr": "\n\n(Réponds en français.)",
     "en": "\n\n(Answer in English.)",
 }
+# Transcription peu sûre (voir text_filter) : le LLM est prévenu, pour qu'il fasse
+# répéter au lieu de répondre à une phrase mal reconnue.
+UNCERTAIN_HINTS = {
+    "fr": "\n\n(Transcription peu sûre. Réponds en français.)",
+    "en": "\n\n(Uncertain transcription. Answer in English.)",
+}
 WARMUP_TEXTS = {"fr": "Bonjour.", "en": "Hello."}
 NO_LLM_REPLY = NO_LLM_REPLIES["fr"]
 EMPTY_REPLY = EMPTY_REPLIES["fr"]
@@ -166,19 +172,21 @@ class VoicePipeline:
             return
 
         log.info("Utilisateur (%s) : %s", tr.language, user_text)
-        self.respond(user_text, record, speech_end, language=tr.language)
+        self.respond(user_text, record, speech_end, language=tr.language, uncertain=verdict.uncertain)
         if self.wake:
             self.wake.mark_exchange(time.monotonic())
 
     # ----------------------------------------------------------- la réponse
     def respond(self, user_text: str, record: dict | None = None,
-                speech_end: float | None = None, language: str = "fr") -> str:
+                speech_end: float | None = None, language: str = "fr",
+                uncertain: bool = False) -> str:
         """Fait répondre le robot. `language` est la langue de l'interlocuteur : elle
         est rappelée au LLM et choisit les messages de secours. La voix, elle, suit
         la langue de la réponse, devinée sur sa première phrase."""
         record = dict(record or {})
         record.setdefault("transcription", user_text)
         record.setdefault("langue", language)
+        record["incertain"] = uncertain
         latencies = record.setdefault("latences_ms", {})
         t_start = self.clock()
         speech_end = t_start if speech_end is None else speech_end
@@ -209,7 +217,7 @@ class VoicePipeline:
         splitter = SentenceSplitter(first_clause_chars=self.first_clause_chars)
         # Le message est gardé tel qu'envoyé, rappel compris : l'historique du tour
         # suivant reste identique à ce qu'Ollama a déjà calculé.
-        sent_text = user_text + LANGUAGE_HINTS.get(language, "")
+        sent_text = user_text + (UNCERTAIN_HINTS if uncertain else LANGUAGE_HINTS).get(language, "")
         messages = self.conversation.with_user(sent_text)
         try:
             stream = self.router.stream(self.system_prompt, messages, info, language=language)
@@ -245,7 +253,9 @@ class VoicePipeline:
             self._show_error()
 
         reply = " ".join(spoken)
-        if status == "ok":
+        if status == "ok" and not uncertain:
+            # Un échange incertain n'entre pas dans l'historique : une phrase mal
+            # reconnue ne doit pas fausser les réponses suivantes.
             self.conversation.commit(sent_text, reply)
         log.info("J-ONE (%s) : %s", info.backend or "-", reply)
 

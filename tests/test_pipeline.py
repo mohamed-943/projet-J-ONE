@@ -230,3 +230,17 @@ def test_warmup_synthesizes_each_voice():
     tts.voices = {"fr": None, "en": None}
     p.warmup()
     assert tts.languages == ["fr", "en"]
+
+
+def test_uncertain_utterance_warns_llm_and_stays_out_of_history():
+    from jone.pipeline import UNCERTAIN_HINTS
+
+    cloud = FakeBackend("groq", "Pardon, pouvez-vous répéter ?")
+    p, _, log, _ = make_pipeline(
+        cloud=cloud, mic=FakeMic(), text_filter=TranscriptFilter(),
+        stt=FakeSTT(Transcription("Est-ce que les gombras se lèvés?", avg_logprob=-0.97)),
+    )
+    p.handle_utterance(np.zeros(16000, dtype=np.int16), detected_at=0.0)
+    assert cloud.seen[0][-1]["content"].endswith(UNCERTAIN_HINTS["fr"])
+    assert p.conversation.messages == []
+    assert log.records[-1]["incertain"] is True and log.records[-1]["statut"] == "ok"
