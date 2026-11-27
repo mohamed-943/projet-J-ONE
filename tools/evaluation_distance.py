@@ -60,6 +60,10 @@ def main():
     p.add_argument("--out", help="rapport Markdown (défaut : docs/evaluation_distance-<date>.md)")
     args = p.parse_args()
 
+    if not Path(args.corpus).is_dir():
+        raise SystemExit(f"Dossier introuvable : {args.corpus}\nEnregistrez d'abord le corpus "
+                         "(docs/protocole_evaluation.md, section 5) :\n  python tools/enregistrer_corpus.py "
+                         f"--protocole {args.protocole} --out {args.corpus}/1m --input g1_multicast")
     dirs = distance_dirs(Path(args.corpus))
     if not dirs:
         raise SystemExit(f"Aucun dossier de distance (0.5m, 1m, 2m…) dans {args.corpus}")
