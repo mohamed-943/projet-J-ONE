@@ -31,6 +31,8 @@ stt:                            # EF-02, ENF-02
   languages: [fr, en]           # réponse dans la langue de l'interlocuteur
   default_language: fr          # retenue quand la détection hésite entre fr et en
   language_margin: 0.65         # part minimale de la langue retenue (fr + en = 1)
+  switch_share: 0.85            # part nécessaire pour quitter la langue de la conversation
+  min_switch_s: 1.5             # énoncé plus court : langue de la conversation gardée, sans détection
   detect_model: tiny            # détection de langue par un petit modèle, puis une seule
                                 # passe du grand modèle (null : détection par ce dernier)
   cpu_threads: 0                # Whisper sur CPU : 0 = tous les cœurs
@@ -55,6 +57,11 @@ filter:                         # EF-03
   # Confiance de Whisper (avg_logprob), seul indicateur fiable avec whisper-server :
   reject_avg_logprob: -1.1      # en dessous : rejeté
   uncertain_avg_logprob: -0.8   # en dessous : accepté mais incertain (LLM prévenu, hors historique)
+
+dialogue:
+  clarification: true           # transcription incertaine : le robot fait répéter, sans LLM
+  max_clarifications: 1         # de suite ; ensuite le LLM répond (prévenu de l'incertitude)
+  language_session_s: 120       # langue de la conversation gardée, oubliée après 2 min sans échange
 
 wake_word:                      # question ouverte : mot d'éveil ou écoute continue
   enabled: false

@@ -70,7 +70,8 @@ class FakeSTT:
     def __init__(self, tr):
         self.tr = tr
 
-    def transcribe(self, audio):
+    def transcribe(self, audio, prefer=None):
+        self.prefer = prefer
         return self.tr
 
 
@@ -232,15 +233,50 @@ def test_warmup_synthesizes_each_voice():
     assert tts.languages == ["fr", "en"]
 
 
-def test_uncertain_utterance_warns_llm_and_stays_out_of_history():
+def test_uncertain_utterance_is_clarified_then_sent_to_llm_with_warning():
+    from jone.dialogue import CLARIFY_REPLIES
     from jone.pipeline import UNCERTAIN_HINTS
 
     cloud = FakeBackend("groq", "Pardon, pouvez-vous répéter ?")
-    p, _, log, _ = make_pipeline(
+    p, _, log, tts = make_pipeline(
         cloud=cloud, mic=FakeMic(), text_filter=TranscriptFilter(),
         stt=FakeSTT(Transcription("Est-ce que les gombras se lèvés?", avg_logprob=-0.97)),
     )
-    p.handle_utterance(np.zeros(16000, dtype=np.int16), detected_at=0.0)
+    audio = np.zeros(16000, dtype=np.int16)
+    # 1re fois : le robot fait répéter lui-même, sans LLM
+    p.handle_utterance(audio, detected_at=0.0)
+    assert cloud.seen == [] and tts.spoken == [CLARIFY_REPLIES["fr"]]
+    assert log.records[-1]["llm"] == "clarification" and log.records[-1]["incertain"] is True
+    # 2e fois de suite : le LLM répond, prévenu de l'incertitude, hors historique
+    p.handle_utterance(audio, detected_at=0.0)
     assert cloud.seen[0][-1]["content"].endswith(UNCERTAIN_HINTS["fr"])
     assert p.conversation.messages == []
-    assert log.records[-1]["incertain"] is True and log.records[-1]["statut"] == "ok"
+
+
+def test_language_command_switches_without_llm():
+    from jone.dialogue import LANGUAGE_SWITCH_REPLIES
+
+    cloud = FakeBackend("groq", "Bonjour.")
+    stt = FakeSTT(Transcription("Maintenant je voulais qu'on parle en anglais si possible.", avg_logprob=-0.2))
+    p, _, log, tts = make_pipeline(cloud=cloud, mic=FakeMic(), text_filter=TranscriptFilter(), stt=stt)
+    p.handle_utterance(np.zeros(16000, dtype=np.int16), detected_at=0.0)
+    assert cloud.seen == [] and tts.spoken == [LANGUAGE_SWITCH_REPLIES["en"]] and tts.languages == ["en"]
+    assert log.records[-1]["llm"] == "commande_langue"
+    # la conversation continue en anglais : préférence transmise à Whisper
+    stt.tr = Transcription("What is your name?", avg_logprob=-0.2, language="en")
+    p.handle_utterance(np.zeros(16000, dtype=np.int16), detected_at=0.0)
+    assert stt.prefer == "en"
+
+
+def test_conversation_language_forgotten_after_idle(monkeypatch):
+    import jone.pipeline as pipeline_mod
+
+    now = [1000.0]
+    monkeypatch.setattr(pipeline_mod.time, "monotonic", lambda: now[0])
+    stt = FakeSTT(Transcription("Bonjour.", avg_logprob=-0.2, language="fr"))
+    p, _, _, _ = make_pipeline(cloud=FakeBackend("groq", "Bonjour !"), mic=FakeMic(),
+                               text_filter=TranscriptFilter(), stt=stt)
+    p.handle_utterance(np.zeros(16000, dtype=np.int16), detected_at=0.0)
+    assert p.conversation_language == "fr"
+    now[0] += 121
+    assert p.conversation_language is None

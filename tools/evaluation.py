@@ -25,7 +25,8 @@ import _bootstrap  # noqa: F401
 from _bootstrap import ROOT
 from bench_stt import load_wav_16k
 from jone.config import load_config, resolve_path
-from jone.evaluation import ItemResult, audio_levels, command_recognized, compute_metrics, load_protocol
+from jone.evaluation import (ItemResult, audio_levels, command_recognized, compute_metrics,
+                             confidence_curve, load_protocol)
 from jone.metrics import summarize, wer
 from jone.stt import create_stt
 from jone.text_filter import TranscriptFilter, WakeWordGate
@@ -55,6 +56,9 @@ class Frontend:
         self.stt = create_stt(cfg)
         self.stt.warmup()
         self.text_filter = TranscriptFilter.from_config(cfg)
+        # Même filtre sans seuil de confiance, pour la courbe FAR / FRR selon ce seuil.
+        self.base_filter = TranscriptFilter(**{**cfg["filter"], "reject_avg_logprob": float("-inf"),
+                                               "uncertain_avg_logprob": float("-inf")})
         wake_cfg = dict(cfg["wake_word"], enabled=True)  # évalué même si désactivé en écoute
         self.wake = WakeWordGate.from_config({"wake_word": wake_cfg})
 
@@ -70,7 +74,7 @@ def evaluate(fe: Frontend, items, corpus: Path, verbose: bool = True) -> list[It
         r = ItemResult(item)
         audio = load_wav_16k(path)
         r.voice_db, r.noise_db = audio_levels(audio, fe.frame)
-        texts, accepted = [], []
+        texts, accepted, flags = [], [], []
         stt, text_filter, wake = fe.stt, fe.text_filter, fe.wake
         for utt in segments(fe.segmenter, audio, fe.frame, fe.rate):
             r.segments += 1
@@ -78,14 +82,17 @@ def evaluate(fe: Frontend, items, corpus: Path, verbose: bool = True) -> list[It
             r.stt_ms.append(tr.elapsed_ms)
             r.language = r.language or tr.language
             texts.append(tr.text)
+            r.segment_scores.append((fe.base_filter.check(tr).accepted, tr.avg_logprob))
             verdict = text_filter.check(tr)
             if verdict.accepted:
+                flags.append(verdict.uncertain)
                 accepted.append(verdict.text)
                 r.wake = r.wake or wake.admit(verdict.text, 0.0) is not None
             else:
                 r.rejections.append(verdict.reason)
         r.transcription = " ".join(t for t in texts if t).strip()
         r.accepted = " ".join(accepted).strip()
+        r.uncertain = bool(flags) and all(flags)
         results.append(r)
         if verbose:
             print(f"  {item.id} {item.type:10s} {r.segments} énoncé(s), SNR {r.snr_db:4.1f} dB → "
@@ -176,7 +183,9 @@ def report(cfg: dict, metrics: dict, e2e: dict, backend: str, results: list[Item
         f"{ms(e2e['p90'])} | {ms(e2e['max'])} |",
         "",
         f"Bout en bout : échanges du journal{' depuis ' + since if since else ''}. "
-        + (f"Cible ENF-01 : p90 ≤ {target} ms → {'conforme' if ok else 'non conforme'}." if target else ""),
+        + (f"Cible ENF-01 : p90 ≤ {target} ms → "
+           f"{'non mesuré (aucun échange dans le journal)' if not e2e['n'] else 'conforme' if ok else 'non conforme'}."
+           if target else ""),
         "",
         "## 4. FAR / FRR — fiabilité de la détection vocale",
         "",
@@ -187,6 +196,17 @@ def report(cfg: dict, metrics: dict, e2e: dict, backend: str, results: list[Item
         "",
         "Parole : FAR = bruits qui auraient déclenché une réponse ; FRR = phrases sans aucun énoncé accepté.  ",
         "Mot d'éveil : FAR = phrases hors cible et bruits acceptés ; FRR = commandes où « Sarah » n'est pas reconnu.",
+        "",
+        f"Phrases incertaines, auxquelles le robot répondrait « pouvez-vous répéter ? » : {pct(metrics['clarification'])}",
+        "",
+        "### Seuil de confiance (avg_logprob) : FAR / FRR",
+        "",
+        f"Seuils actuels : rejet sous {cfg['filter']['reject_avg_logprob']}, incertain sous "
+        f"{cfg['filter']['uncertain_avg_logprob']}.",
+        "",
+        "| Seuil de rejet | FRR parole | FAR bruits |",
+        "|---|---|---|",
+        *[f"| {c['seuil']} | {pct(c['FRR'])} | {pct(c['FAR'])} |" for c in confidence_curve(results)],
         "",
         "## Détail",
         "",

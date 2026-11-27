@@ -74,6 +74,9 @@ def build_pipeline(cfg: dict, text_mode: bool = False):
         tail_margin_s=cfg["audio_output"]["tail_margin_s"],
         error_hold_s=cfg["led"]["error_hold_s"],
         first_clause_chars=llm_cfg["first_clause_chars"],
+        clarification=cfg["dialogue"]["clarification"],
+        max_clarifications=cfg["dialogue"]["max_clarifications"],
+        language_session_s=cfg["dialogue"]["language_session_s"],
         **kwargs,
     )
     pipeline.warmup()

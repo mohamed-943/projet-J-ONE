@@ -101,7 +101,8 @@ def _compression_ratio(text: str) -> float:
 class WhisperServerSTT:
     def __init__(self, url="http://127.0.0.1:8080", binary=None, model=None, threads=4,
                  language=None, languages=("fr", "en"), default_language="fr",
-                 language_margin=0.65, audio_ctx_margin_s=3.0, min_audio_ctx=512,
+                 language_margin=0.65, switch_share=0.85, min_switch_s=1.5,
+                 audio_ctx_margin_s=3.0, min_audio_ctx=512,
                  startup_timeout_s=60.0, request_timeout_s=30.0, log_dir="logs"):
         import httpx
 
@@ -110,6 +111,8 @@ class WhisperServerSTT:
         self.languages = list(languages or ([language] if language else []))
         self.default_language = default_language
         self.language_margin = language_margin
+        self.switch_share = switch_share
+        self.min_switch_s = min_switch_s
         self.audio_ctx_margin_s = audio_ctx_margin_s
         self.min_audio_ctx = min_audio_ctx  # 0 : fenêtre complète de 30 s
         self.client = httpx.Client(timeout=request_timeout_s)
@@ -134,6 +137,8 @@ class WhisperServerSTT:
             languages=s.get("languages", ("fr", "en")),
             default_language=s.get("default_language", "fr"),
             language_margin=s.get("language_margin", 0.65),
+            switch_share=s.get("switch_share", 0.85),
+            min_switch_s=s.get("min_switch_s", 1.5),
             audio_ctx_margin_s=server.get("audio_ctx_margin_s", 3.0),
             min_audio_ctx=server.get("min_audio_ctx", 512),
             startup_timeout_s=server.get("startup_timeout_s", 60.0),
@@ -203,18 +208,25 @@ class WhisperServerSTT:
                       self.language or self.default_language, with_probs=False, audio_s=1.0)
         log.info("Whisper (GPU) préchauffé en %.1f s", time.perf_counter() - t0)
 
-    def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> Transcription:
+    def transcribe(self, audio: np.ndarray, sample_rate: int = 16000,
+                   prefer: str | None = None) -> Transcription:
+        """`prefer` : langue de la conversation en cours, quittée seulement sur une
+        détection nette d'une autre langue (voir `choose_language`)."""
         t0 = time.perf_counter()
         wav = _wav_bytes(audio, sample_rate)
         audio_s = len(audio) / sample_rate
-        if self.language:
-            language, language_prob = self.language, 1.0
+        strong = audio_s >= self.min_switch_s
+        if self.language or (prefer in self.languages and not strong):
+            # Langue imposée, ou énoncé trop court pour changer de langue : une seule
+            # requête, sans détection.
+            language, language_prob = self.language or prefer, 1.0
             res = self._request(wav, language, with_probs=False, audio_s=audio_s)
         else:
             res = self._request(wav, "auto", with_probs=True, audio_s=audio_s)
             probs = res.get("language_probabilities") or {}
-            language, language_prob = choose_language(probs, self.languages,
-                                                      self.default_language, self.language_margin)
+            language, language_prob = choose_language(
+                probs, self.languages, self.default_language, self.language_margin,
+                preferred=prefer, switch_share=self.switch_share, strong=strong)
             # La langue que Whisper a réellement transcrite ; les probabilités viennent
             # d'une détection séparée et peuvent désigner une autre langue.
             name = str(res.get("language") or "").lower()

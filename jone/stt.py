@@ -33,14 +33,23 @@ class Transcription:
     language_prob: float = 1.0
 
 
-def choose_language(probs: dict[str, float], languages, default: str,
-                    margin: float) -> tuple[str, float]:
-    """Langue autorisée la plus probable et sa part parmi les langues autorisées ;
-    `default` si la détection hésite (part sous `margin`)."""
+def choose_language(probs: dict[str, float], languages, default: str, margin: float,
+                    preferred: str | None = None, switch_share: float = 0.85,
+                    strong: bool = True) -> tuple[str, float]:
+    """Langue autorisée la plus probable et sa part parmi les langues autorisées.
+
+    Sans `preferred` : `default` si la détection hésite (part sous `margin`).
+    Avec `preferred` (la langue de la conversation) : on ne la quitte que si une autre
+    langue l'emporte nettement (part ≥ `switch_share`) sur un énoncé assez long
+    (`strong`). Un « Yeah » ou un bruit ne fait plus basculer la conversation."""
     allowed = {lang: float(probs.get(lang, 0.0)) for lang in languages}
     best = max(allowed, key=allowed.get)
     total = sum(allowed.values())
     share = allowed[best] / total if total else 0.0
+    if preferred in allowed:
+        if best != preferred and not (strong and share >= switch_share):
+            return preferred, (allowed[preferred] / total if total else 0.0)
+        return best, share
     if share < margin and default in allowed:
         return default, share
     return best, share
@@ -60,7 +69,8 @@ def _load_model(model, device, compute_type, cpu_threads):
 class WhisperSTT:
     def __init__(self, model="large-v3-turbo", device="cuda", compute_type="int8_float16",
                  beam_size=1, language=None, languages=("fr", "en"), default_language="fr",
-                 language_margin=0.65, detect_model="tiny", cpu_threads=0):
+                 language_margin=0.65, detect_model="tiny", cpu_threads=0,
+                 switch_share=0.85, min_switch_s=1.5):
         t0 = time.perf_counter()
         # 0 : tous les cœurs (CTranslate2 n'en prend que 4 par défaut).
         cpu_threads = cpu_threads or os.cpu_count() or 4
@@ -70,6 +80,8 @@ class WhisperSTT:
         self.languages = list(languages or ([language] if language else []))
         self.default_language = default_language
         self.language_margin = language_margin
+        self.switch_share = switch_share
+        self.min_switch_s = min_switch_s
         self.detector = None
         if not language and len(self.languages) > 1 and detect_model and detect_model != model:
             self.detector = _load_model(detect_model, device, compute_type, cpu_threads)
@@ -95,17 +107,18 @@ class WhisperSTT:
         )
         return list(segments), info
 
-    def _choose(self, info) -> tuple[str, float]:
+    def _choose(self, info, prefer=None, strong=True) -> tuple[str, float]:
         probs = dict(getattr(info, "all_language_probs", None) or [])
         if not probs and getattr(info, "language", None):
             probs = {info.language: float(info.language_probability)}
-        return choose_language(probs, self.languages, self.default_language, self.language_margin)
+        return choose_language(probs, self.languages, self.default_language, self.language_margin,
+                               preferred=prefer, switch_share=self.switch_share, strong=strong)
 
-    def detect_language(self, samples: np.ndarray) -> tuple[str, float]:
+    def detect_language(self, samples: np.ndarray, prefer=None, strong=True) -> tuple[str, float]:
         # Le générateur de segments n'est pas parcouru : seule la détection est calculée.
         _, info = self.detector.transcribe(samples, language=None, beam_size=1,
                                            vad_filter=False, without_timestamps=True)
-        return self._choose(info)
+        return self._choose(info, prefer, strong)
 
     def warmup(self) -> None:
         """Première inférence à vide : sinon le premier énoncé paie l'initialisation."""
@@ -116,19 +129,24 @@ class WhisperSTT:
         self._run(silence, self.language or self.default_language)
         log.info("Whisper préchauffé en %.1f s", time.perf_counter() - t0)
 
-    def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> Transcription:
+    def transcribe(self, audio: np.ndarray, sample_rate: int = 16000,
+                   prefer: str | None = None) -> Transcription:
+        """`prefer` : langue de la conversation en cours, quittée seulement sur une
+        détection nette d'une autre langue (voir `choose_language`)."""
         t0 = time.perf_counter()
         samples = audio.astype(np.float32) / 32768.0 if audio.dtype == np.int16 else audio
-        if self.language:
-            language, language_prob = self.language, 1.0
+        strong = len(samples) / sample_rate >= self.min_switch_s
+        if self.language or (prefer in self.languages and not strong):
+            # Langue imposée, ou énoncé trop court pour changer de langue : pas de détection.
+            language, language_prob = self.language or prefer, 1.0
             segments, _ = self._run(samples, language)
         elif self.detector:
-            language, language_prob = self.detect_language(samples)
+            language, language_prob = self.detect_language(samples, prefer, strong)
             segments, _ = self._run(samples, language)
         else:
             segments, info = self._run(samples, None)
             detected = info.language
-            language, language_prob = self._choose(info)
+            language, language_prob = self._choose(info, prefer, strong)
             if language != detected:
                 log.info("Langue détectée %s, retranscription en %s", detected, language)
                 segments, _ = self._run(samples, language)

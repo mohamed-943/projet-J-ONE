@@ -44,6 +44,8 @@ DEFAULTS: dict[str, Any] = {
         "languages": ["fr", "en"],
         "default_language": "fr",  # retenue quand la détection hésite
         "language_margin": 0.65,
+        "switch_share": 0.85,  # part nécessaire pour quitter la langue de la conversation
+        "min_switch_s": 1.5,  # énoncé plus court : la langue de la conversation est gardée
         "detect_model": "tiny",  # modèle rapide pour la détection de langue
         "cpu_threads": 0,  # 0 : tous les cœurs
         "backend": "faster-whisper",  # faster-whisper | whisper-server (GPU de la Jetson)
@@ -65,6 +67,11 @@ DEFAULTS: dict[str, Any] = {
         "blacklist": [],
         "reject_avg_logprob": -1.1,
         "uncertain_avg_logprob": -0.8,
+    },
+    "dialogue": {
+        "clarification": True,  # transcription incertaine : le robot fait répéter
+        "max_clarifications": 1,  # de suite ; ensuite le LLM répond
+        "language_session_s": 120.0,  # langue de la conversation oubliée après ce délai
     },
     "wake_word": {
         "enabled": False,

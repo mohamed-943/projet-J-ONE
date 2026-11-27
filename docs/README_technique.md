@@ -200,16 +200,22 @@ Puis `stt: {backend: whisper-server}` dans `config.local.yaml`.
 
 ### 4.5 `text_filter.py` — filtre et mot d'éveil
 
-`TranscriptFilter.check(t) -> FilterResult(accepted, text, reason)`. Les règles sont appliquées dans cet ordre ; la première qui s'applique donne le motif :
+`TranscriptFilter.check(t) -> FilterResult(accepted, text, reason, uncertain)`. Les annotations de sons non verbaux (`*cris*`, `[Musique]`, `(rires)`, `♪`) sont d'abord retirées du texte. Les règles sont ensuite appliquées dans cet ordre ; la première qui s'applique donne le motif :
 
 | Ordre | Règle | Motif |
 |---|---|---|
-| 1 | moins de `min_chars` caractères alphanumériques après normalisation | `vide` |
-| 2 | texte normalisé dans `DEFAULT_BLACKLIST` + `filter.blacklist` | `hallucination connue` |
-| 3 | texte dans `SUSPICIOUS_SHORT` (« merci », « au revoir »…) et `no_speech_prob > 0,3` ou `avg_logprob < -0,6` | `hallucination probable` |
-| 4 | `no_speech_prob > max_no_speech_prob` **et** `avg_logprob < min_avg_logprob` | `probablement pas de parole` |
-| 5 | `compression_ratio > max_compression_ratio` | `texte répétitif` |
-| 6 | un même trigramme répété au moins 4 fois | `boucle de répétition` |
+| 1 | moins de `min_chars` caractères alphanumériques : `son non verbal` s'il ne restait que des annotations, sinon `vide` | `son non verbal`, `vide` |
+| 2 | texte majoritairement hors alphabet latin | `écriture non latine` |
+| 3 | texte normalisé dans `DEFAULT_BLACKLIST` + `filter.blacklist` | `hallucination connue` |
+| 4 | texte dans `SUSPICIOUS_SHORT` (« merci », « au revoir »…) et `no_speech_prob > 0,3` ou `avg_logprob < -0,6` | `hallucination probable` |
+| 5 | `no_speech_prob > max_no_speech_prob` **et** `avg_logprob < min_avg_logprob` | `probablement pas de parole` |
+| 6 | `compression_ratio > max_compression_ratio` | `texte répétitif` |
+| 7 | un même trigramme répété au moins 4 fois | `boucle de répétition` |
+| 8 | dialogue à plusieurs voix (« - … - … ») | `plusieurs voix` |
+| 9 | `avg_logprob < reject_avg_logprob` (−1,1) | `confiance trop faible` |
+| — | accepté ; `uncertain` si `avg_logprob < uncertain_avg_logprob` (−0,8) | |
+
+Avec whisper-server, `no_speech_prob` vaut toujours 0 : whisper.cpp le calcule après le prompt complet, pas après le jeton de début. Les règles 4 et 5 ne servent donc qu'avec faster-whisper, et `avg_logprob` est le seul indicateur de confiance commun aux deux moteurs. Rejoués sur les 72 énoncés réels du 27/11, les seuils de confiance et les règles 1, 8 et 9 rejettent 12 bruits et conversations ambiantes de plus, et en marquent 14 incertains. Sur le corpus d'évaluation, ils ne rejettent aucune vraie phrase. La courbe FAR / FRR selon le seuil, produite par `tools/evaluation.py`, sert à les régler.
 
 La normalisation (`normalize`) passe en NFC et en minuscules, uniformise les apostrophes, retire `[]()*♪♫` et la ponctuation en bordure.
 
@@ -218,6 +224,17 @@ La normalisation (`normalize`) passe en NFC et en minuscules, uniformise les apo
 - mot d'éveil trouvé : le retire, avec la ponctuation qui le suit, et renvoie le reste (`"Bonjour"` si le reste est vide) ;
 - pas de mot d'éveil, mais dernier échange il y a moins de `session_timeout_s` : renvoie le texte ;
 - sinon : `None`, et l'énoncé est journalisé avec le statut `ignore`.
+
+### 4.5 bis `dialogue.py` — réponses sans LLM, langue de la conversation
+
+Deux cas ne passent pas par le LLM, parce que Qwen2.5 3B les traite mal :
+
+- **Commande de langue** (`language_command`) : « parle en anglais », « on continue en français s'il te plaît », « speak French ». Il faut une seule langue cible, au plus 12 mots, un verbe (parler, répondre, passer, continuer, speak, talk…) ou une phrase réduite à la langue et à des formules de politesse. Les questions sur les capacités (« tu peux parler d'autres langues ? ») et les négations sont exclues. Le robot confirme dans la nouvelle langue (`LANGUAGE_SWITCH_REPLIES`), qui devient celle de la conversation. L'échange entre dans l'historique.
+- **Clarification** : un énoncé incertain reçoit « Pardon, je n'ai pas bien compris. Pouvez-vous répéter ? » (`CLARIFY_REPLIES`), au plus `dialogue.max_clarifications` fois de suite. Au-delà, le LLM répond, prévenu par « (Transcription peu sûre) », et l'échange reste hors de l'historique.
+
+**Langue de la conversation** : `VoicePipeline` garde la langue du dernier échange et la passe à Whisper (`transcribe(audio, prefer=…)`). Whisper ne la quitte que si une autre langue l'emporte nettement (part ≥ `stt.switch_share`, 0,85) sur un énoncé d'au moins `stt.min_switch_s` (1,5 s). Un énoncé plus court est transcrit directement dans la langue de la conversation, en une seule requête sans détection. Cette langue est oubliée après `dialogue.language_session_s` (120 s) sans échange.
+
+Le journal note `langue_conversation`, `incertain`, et dans `llm` : `commande_langue` ou `clarification`.
 
 ### 4.6 `llm/` — modèles de langage
 

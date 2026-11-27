@@ -14,6 +14,7 @@ import time
 from typing import Callable
 
 from .conversation import Conversation, load_system_prompt
+from .dialogue import CLARIFY_REPLIES, LANGUAGE_SWITCH_REPLIES, language_command
 from .led import Led, State
 from .llm.router import LLMRouter, NoBackendAvailable, RouteInfo
 from .stt import Transcription
@@ -58,6 +59,8 @@ class VoicePipeline:
                  tail_margin_s: float = 0.4, error_hold_s: float = 2.0,
                  mic=None, segmenter=None, stt=None, text_filter=None, wake=None,
                  speech_end_delay_s: float = 0.0, first_clause_chars: int = 0,
+                 clarification: bool = True, max_clarifications: int = 1,
+                 language_session_s: float = 120.0,
                  clock: Callable[[], float] = time.perf_counter):
         self.router = router
         self.conversation = conversation
@@ -78,8 +81,28 @@ class VoicePipeline:
         # on l'ajoute pour mesurer la latence depuis la vraie fin de parole (ENF-01).
         self.speech_end_delay_s = speech_end_delay_s
         self.first_clause_chars = first_clause_chars
+        # Transcription incertaine : le robot fait répéter lui-même, au plus
+        # `max_clarifications` fois de suite, puis laisse le LLM répondre.
+        self.clarification = clarification
+        self.max_clarifications = max_clarifications
+        self._clarifications = 0
+        # Langue de la conversation : gardée tant qu'on échange, oubliée après
+        # `language_session_s` sans échange (une autre personne peut arriver).
+        self.language_session_s = language_session_s
+        self._language: str | None = None
+        self._last_turn = float("-inf")
         self.clock = clock
         self._stop = threading.Event()
+
+    @property
+    def conversation_language(self) -> str | None:
+        if time.monotonic() - self._last_turn > self.language_session_s:
+            return None
+        return self._language
+
+    def _set_language(self, language: str) -> None:
+        self._language = language
+        self._last_turn = time.monotonic()
 
     def warmup(self) -> None:
         """Premières inférences à vide de Whisper, de chaque voix et du LLM : sans
@@ -148,11 +171,13 @@ class VoicePipeline:
         self.led.set_state(State.THINKING)
         speech_end = detected_at - self.speech_end_delay_s
 
-        tr: Transcription = self.stt.transcribe(audio)
+        session_language = self.conversation_language
+        tr: Transcription = self.stt.transcribe(audio, prefer=session_language)
         record = {
             "transcription": tr.text,
             "audio_s": round(tr.audio_s, 2),
             "langue": tr.language,
+            "langue_conversation": session_language,
             "stt": {"avg_logprob": round(tr.avg_logprob, 3),
                     "no_speech_prob": round(tr.no_speech_prob, 3),
                     "compression_ratio": round(tr.compression_ratio, 2)},
@@ -171,10 +196,53 @@ class VoicePipeline:
             self.exchange_log.write({**record, "statut": "ignore", "motif": "pas de mot d'eveil"})
             return
 
-        log.info("Utilisateur (%s) : %s", tr.language, user_text)
-        self.respond(user_text, record, speech_end, language=tr.language, uncertain=verdict.uncertain)
+        log.info("Utilisateur (%s%s) : %s", tr.language, ", incertain" if verdict.uncertain else "", user_text)
+        language = tr.language
+        requested = None if verdict.uncertain else language_command(user_text)
+        if requested:
+            # « Parle en anglais » : changement de langue sans LLM, confirmé dans la
+            # nouvelle langue.
+            language = requested
+            self._clarifications = 0
+            self.reply_fixed(LANGUAGE_SWITCH_REPLIES[requested], requested, record, speech_end,
+                             kind="commande_langue", user_text=user_text)
+        elif verdict.uncertain and self.clarification and self._clarifications < self.max_clarifications:
+            self._clarifications += 1
+            self.reply_fixed(CLARIFY_REPLIES.get(language, CLARIFY_REPLIES["fr"]), language,
+                             {**record, "incertain": True}, speech_end, kind="clarification")
+        else:
+            self._clarifications = 0
+            self.respond(user_text, record, speech_end, language=language, uncertain=verdict.uncertain)
+        self._set_language(language)
         if self.wake:
             self.wake.mark_exchange(time.monotonic())
+
+    def reply_fixed(self, reply: str, language: str, record: dict, speech_end: float,
+                    kind: str, user_text: str | None = None) -> str:
+        """Réponse prédéfinie, sans LLM. Avec `user_text`, l'échange entre dans
+        l'historique (le LLM saura qu'on a changé de langue)."""
+        latencies = record.setdefault("latences_ms", {})
+        self.speaker.begin_response()
+        t0 = self.clock()
+        pcm = self.tts.synthesize(reply, language=language)
+        tts_s = self.clock() - t0
+        self.led.set_state(State.SPEAKING)
+        self.speaker.enqueue(pcm)
+        self.speaker.wait_until_done()
+        first_audio = self.speaker.first_audio_at
+        time.sleep(self.tail_margin_s)
+        if user_text is not None:
+            self.conversation.commit(user_text + LANGUAGE_HINTS.get(language, ""), reply)
+        log.info("J-ONE (%s) : %s", kind, reply)
+        latencies.update({
+            "tts_premiere_phrase": _ms(tts_s),
+            "bout_en_bout": _ms(first_audio - speech_end) if first_audio else None,
+            "total": _ms(self.clock() - speech_end),
+        })
+        self.exchange_log.write({**record, "statut": "ok", "reponse": reply, "voix": language,
+                                 "llm": kind, "bascule": False, "erreurs_llm": [],
+                                 "latences_ms": latencies})
+        return reply
 
     # ----------------------------------------------------------- la réponse
     def respond(self, user_text: str, record: dict | None = None,

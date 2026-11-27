@@ -73,3 +73,15 @@ def test_distance_folders_and_max_distance(tmp_path):
             {"distance_m": 2.0, "wer": 0.18, "frr": 0.1}, {"distance_m": 3.0, "wer": 0.06, "frr": 0.0}]
     # 3 m passe, mais 2 m échoue : la distance retenue s'arrête à 1 m
     assert max_distance(rows, 0.10, 0.10) == 1.0
+
+
+def test_confidence_curve():
+    from jone.evaluation import confidence_curve
+
+    good = ItemResult(Item("p1", "phrase", "fr", "bonjour"), segment_scores=[(True, -0.3)])
+    weak = ItemResult(Item("p2", "phrase", "fr", "salut"), segment_scores=[(True, -1.2)])
+    noise = ItemResult(Item("b1", "bruit", "-", "porte"), segment_scores=[(True, -1.5)])
+    repeated = ItemResult(Item("b2", "bruit", "-", "clavier"), segment_scores=[(False, -0.2)])
+    curve = {c["seuil"]: c for c in confidence_curve([good, weak, noise, repeated], (-1.6, -1.0))}
+    assert curve[-1.6]["FRR"]["k"] == 0 and curve[-1.6]["FAR"]["k"] == 1
+    assert curve[-1.0]["FRR"]["k"] == 1 and curve[-1.0]["FAR"]["k"] == 0  # « repeated » rejeté par une autre règle

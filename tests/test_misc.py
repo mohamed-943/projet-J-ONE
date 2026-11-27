@@ -126,6 +126,7 @@ def _bare_stt(model, detector=None):
     stt = WhisperSTT.__new__(WhisperSTT)
     stt.model, stt.detector, stt.beam_size, stt.language = model, detector, 1, None
     stt.languages, stt.default_language, stt.language_margin = ["fr", "en"], "fr", 0.65
+    stt.switch_share, stt.min_switch_s = 0.85, 1.5
     return stt
 
 
@@ -176,6 +177,7 @@ def _server_stt(responses):
 
     stt = WhisperServerSTT.__new__(WhisperServerSTT)
     stt.language, stt.languages, stt.default_language, stt.language_margin = None, ["fr", "en"], "fr", 0.65
+    stt.switch_share, stt.min_switch_s = 0.85, 1.5
     calls = []
 
     def fake_request(wav, language, with_probs, audio_s=30.0):
@@ -244,3 +246,30 @@ def test_collapse_repeated_sentences():
     assert collapse_repeats("Bonjour ! Ça va ? Ça va ?") == "Bonjour ! Ça va ?"
     assert collapse_repeats("Oui. Non. Oui.") == "Oui. Non. Oui."
     assert collapse_repeats("Quelle heure est-il") == "Quelle heure est-il"
+
+
+def test_conversation_language_kept_unless_clear_switch():
+    from jone.stt import choose_language
+
+    probs = {"en": 0.6, "fr": 0.3}  # anglais probable mais pas net (part 0,67)
+    assert choose_language(probs, ["fr", "en"], "fr", 0.65, preferred="fr")[0] == "fr"
+    assert choose_language(probs, ["fr", "en"], "fr", 0.65)[0] == "en"  # sans conversation en cours
+    clear = {"en": 0.95, "fr": 0.02}
+    assert choose_language(clear, ["fr", "en"], "fr", 0.65, preferred="fr")[0] == "en"
+    # énoncé court : pas de changement, même net
+    assert choose_language(clear, ["fr", "en"], "fr", 0.65, preferred="fr", strong=False)[0] == "fr"
+
+
+def test_short_utterance_uses_conversation_language_without_detection():
+    first = {"segments": [{"text": " Yeah.", "avg_logprob": -0.3, "no_speech_prob": 0.0}]}
+    stt, calls = _server_stt([first])
+    tr = stt.transcribe(np.zeros(8000, dtype=np.int16), prefer="fr")  # 0,5 s
+    assert calls == ["fr"] and tr.language == "fr"
+
+
+def test_long_utterance_can_switch_language():
+    res = {"language": "english", "language_probabilities": {"en": 0.97, "fr": 0.02},
+           "segments": [{"text": " Can we speak English now?", "avg_logprob": -0.2, "no_speech_prob": 0.0}]}
+    stt, calls = _server_stt([res])
+    tr = stt.transcribe(np.zeros(48000, dtype=np.int16), prefer="fr")  # 3 s
+    assert calls == ["auto"] and tr.language == "en"
