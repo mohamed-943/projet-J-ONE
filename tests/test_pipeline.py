@@ -156,7 +156,7 @@ def test_utterance_goes_through_full_chain_with_wake_word():
         stt=FakeSTT(Transcription("J-ONE, quelle heure est-il ?", avg_logprob=-0.1)),
     )
     p.handle_utterance(np.zeros(16000, dtype=np.int16), detected_at=0.0)
-    assert cloud.seen[0][-1]["content"] == "quelle heure est-il ?"
+    assert cloud.seen[0][-1]["content"].startswith("quelle heure est-il ?")
     assert tts.spoken == ["Il est midi."]
     assert log.records[-1]["transcription"] == "J-ONE, quelle heure est-il ?"
 
@@ -215,16 +215,12 @@ def test_voice_follows_reply_language():
 def test_language_hint_sent_to_llm():
     from jone.pipeline import LANGUAGE_HINTS
 
-    seen = []
-
-    class Recorder(FakeBackend):
-        def stream(self, system, messages):
-            seen.append(system)
-            yield from super().stream(system, messages)
-
-    p, _, _, _ = make_pipeline(cloud=Recorder("groq", "Hello."))
+    cloud = FakeBackend("groq", "Hello.")
+    p, _, _, _ = make_pipeline(cloud=cloud)
     p.respond("Hi", language="en")
-    assert seen[0].endswith(LANGUAGE_HINTS["en"])
+    assert cloud.seen[0][-1]["content"] == "Hi" + LANGUAGE_HINTS["en"]
+    # l'historique garde le texte réellement dit, sans le rappel
+    assert p.conversation.messages[0]["content"] == "Hi"
 
 
 def test_warmup_synthesizes_each_voice():

@@ -29,11 +29,13 @@ EMPTY_REPLIES = {
     "fr": "Pardon, je n'ai pas compris. Pouvez-vous reformuler ?",
     "en": "Sorry, I didn't catch that. Could you say it again?",
 }
-# Rappel ajouté au prompt système à chaque tour : un petit LLM local suit mal la
-# consigne générale « réponds dans la langue de l'interlocuteur ».
+# Rappel ajouté au message de l'interlocuteur : un petit LLM local suit mal la
+# consigne générale « réponds dans la langue de l'interlocuteur ». Il n'est pas mis
+# dans le prompt système, qui reste identique d'un tour à l'autre : Ollama réutilise
+# alors son calcul du prompt et de l'historique au lieu de tout relire.
 LANGUAGE_HINTS = {
-    "fr": "\n\nL'interlocuteur parle français : réponds en français.",
-    "en": "\n\nThe person is speaking English: answer in English.",
+    "fr": "\n\n(Réponds en français.)",
+    "en": "\n\n(Answer in English.)",
 }
 WARMUP_TEXTS = {"fr": "Bonjour.", "en": "Hello."}
 NO_LLM_REPLY = NO_LLM_REPLIES["fr"]
@@ -193,10 +195,9 @@ class VoicePipeline:
             spoken.append(text)
 
         splitter = SentenceSplitter(first_clause_chars=self.first_clause_chars)
-        messages = self.conversation.with_user(user_text)
-        system = self.system_prompt + LANGUAGE_HINTS.get(language, "")
+        messages = self.conversation.with_user(user_text + LANGUAGE_HINTS.get(language, ""))
         try:
-            stream = self.router.stream(system, messages, info, language=language)
+            stream = self.router.stream(self.system_prompt, messages, info, language=language)
             try:
                 for delta in stream:
                     for sentence in splitter.feed(delta):

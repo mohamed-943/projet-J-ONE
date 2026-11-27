@@ -72,6 +72,10 @@ class WhisperSTT:
             samples,
             language=language,
             beam_size=self.beam_size,
+            # Pas de nouveaux décodages à température croissante quand le texte est
+            # douteux : chacun coûte une passe complète (13 à 29 s mesurées sur la
+            # Jetson), et le filtre de transcription écarte de toute façon ces cas.
+            temperature=0.0,
             vad_filter=False,  # déjà fait par Silero en amont
             condition_on_previous_text=False,
             without_timestamps=True,
