@@ -126,7 +126,7 @@ def _bare_stt(model, detector=None):
     stt = WhisperSTT.__new__(WhisperSTT)
     stt.model, stt.detector, stt.beam_size, stt.language = model, detector, 1, None
     stt.languages, stt.default_language, stt.language_margin = ["fr", "en"], "fr", 0.65
-    stt.switch_share, stt.min_switch_s = 0.85, 1.5
+    stt.switch_share, stt.min_switch_s, stt.prompt = 0.85, 1.5, None
     return stt
 
 
@@ -177,7 +177,7 @@ def _server_stt(responses):
 
     stt = WhisperServerSTT.__new__(WhisperServerSTT)
     stt.language, stt.languages, stt.default_language, stt.language_margin = None, ["fr", "en"], "fr", 0.65
-    stt.switch_share, stt.min_switch_s = 0.85, 1.5
+    stt.switch_share, stt.min_switch_s, stt.prompt = 0.85, 1.5, ""
     calls = []
 
     def fake_request(wav, language, with_probs, audio_s=30.0):

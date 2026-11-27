@@ -101,7 +101,7 @@ def _compression_ratio(text: str) -> float:
 class WhisperServerSTT:
     def __init__(self, url="http://127.0.0.1:8080", binary=None, model=None, threads=4,
                  language=None, languages=("fr", "en"), default_language="fr",
-                 language_margin=0.65, switch_share=0.85, min_switch_s=1.5,
+                 language_margin=0.65, switch_share=0.85, min_switch_s=1.5, prompt="",
                  audio_ctx_margin_s=3.0, min_audio_ctx=512,
                  startup_timeout_s=60.0, request_timeout_s=30.0, log_dir="logs"):
         import httpx
@@ -113,6 +113,7 @@ class WhisperServerSTT:
         self.language_margin = language_margin
         self.switch_share = switch_share
         self.min_switch_s = min_switch_s
+        self.prompt = prompt
         self.audio_ctx_margin_s = audio_ctx_margin_s
         self.min_audio_ctx = min_audio_ctx  # 0 : fenêtre complète de 30 s
         self.client = httpx.Client(timeout=request_timeout_s)
@@ -139,6 +140,7 @@ class WhisperServerSTT:
             language_margin=s.get("language_margin", 0.65),
             switch_share=s.get("switch_share", 0.85),
             min_switch_s=s.get("min_switch_s", 1.5),
+            prompt=s.get("prompt", ""),
             audio_ctx_margin_s=server.get("audio_ctx_margin_s", 3.0),
             min_audio_ctx=server.get("min_audio_ctx", 512),
             startup_timeout_s=server.get("startup_timeout_s", 60.0),
@@ -195,6 +197,8 @@ class WhisperServerSTT:
             "no_timestamps": "true",
             "no_language_probabilities": "false" if with_probs else "true",
         }
+        if self.prompt:
+            data["prompt"] = self.prompt
         if self.min_audio_ctx:
             data["audio_ctx"] = str(audio_ctx_for(audio_s, self.audio_ctx_margin_s, self.min_audio_ctx))
         resp = self.client.post(self.url + "/inference", data=data,

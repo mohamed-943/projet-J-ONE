@@ -30,7 +30,7 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 DEFAULT_KEYWORDS = (
-    "sibo", "sibô", "cibo", "sybo", "stop", "arrête", "arrete", "attends", "attendez", "tais-toi", "silence",
+    "sibo", "sibô", "cibo", "sybo", "sebo", "sibeau", "stop", "arrête", "arrete", "attends", "attendez", "tais-toi", "silence",
     "excuse-moi", "excusez-moi", "pardon", "wait", "hold on", "excuse me", "shut up", "enough",
 )
 _WORD = re.compile(r"[a-z0-9]+")

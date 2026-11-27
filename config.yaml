@@ -33,6 +33,7 @@ stt:                            # EF-02, ENF-02
   language_margin: 0.65         # part minimale de la langue retenue (fr + en = 1)
   switch_share: 0.85            # part nécessaire pour quitter la langue de la conversation
   min_switch_s: 1.5             # énoncé plus court : langue de la conversation gardée, sans détection
+  prompt: "Sibo"                # vocabulaire attendu : sans lui, Whisper écrit « Si beau », « Sebo »
   detect_model: tiny            # détection de langue par un petit modèle, puis une seule
                                 # passe du grand modèle (null : détection par ce dernier)
   cpu_threads: 0                # Whisper sur CPU : 0 = tous les cœurs
@@ -66,7 +67,7 @@ dialogue:
 barge_in:                       # interrompre le robot pendant qu'il parle (jone/barge_in.py)
   enabled: true
   # Mots qui coupent la parole au robot, sauf s'il les prononce lui-même (écho)
-  keywords: [sibo, sibô, cibo, sybo, stop, arrête, arrete, attends, attendez, tais-toi, silence,
+  keywords: [sibo, sibô, cibo, sybo, sebo, sibeau, stop, arrête, arrete, attends, attendez, tais-toi, silence,
              excuse-moi, excusez-moi, pardon, wait, hold on, excuse me, shut up, enough]
   window_s: 1.4                 # audio transcrit à chaque vérification
   hop_s: 0.5                    # intervalle entre deux vérifications (latence d'interruption)
@@ -76,7 +77,7 @@ barge_in:                       # interrompre le robot pendant qu'il parle (jone
 
 wake_word:                      # question ouverte : mot d'éveil ou écoute continue
   enabled: false
-  words: ["sibo", "sibô", "cibo", "sybo", "siebo", "seebo", "si bo", "ultron", "j-one", "j one", "jone"]
+  words: ["sibo", "sibô", "cibo", "sybo", "siebo", "seebo", "sebo", "sibeau", "si bo", "ultron", "j-one", "j one", "jone"]
   session_timeout_s: 30         # après un échange, pas besoin de répéter le mot
 
 llm:

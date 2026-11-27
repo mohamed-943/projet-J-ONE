@@ -45,7 +45,9 @@ DEFAULTS: dict[str, Any] = {
         "default_language": "fr",  # retenue quand la détection hésite
         "language_margin": 0.65,
         "switch_share": 0.85,  # part nécessaire pour quitter la langue de la conversation
-        "min_switch_s": 1.5,  # énoncé plus court : la langue de la conversation est gardée
+        "min_switch_s": 1.5,
+        # Vocabulaire attendu, donné à Whisper : sans lui, « Sibo » devient « Si beau ».
+        "prompt": "Sibo",  # énoncé plus court : la langue de la conversation est gardée
         "detect_model": "tiny",  # modèle rapide pour la détection de langue
         "cpu_threads": 0,  # 0 : tous les cœurs
         "backend": "faster-whisper",  # faster-whisper | whisper-server (GPU de la Jetson)
@@ -75,7 +77,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "barge_in": {
         "enabled": True,  # l'utilisateur peut couper la parole au robot
-        "keywords": ["sibo", "sibô", "cibo", "sybo", "stop", "arrête", "arrete", "attends", "attendez",
+        "keywords": ["sibo", "sibô", "cibo", "sybo", "sebo", "sibeau", "stop", "arrête", "arrete", "attends", "attendez",
                      "tais-toi", "silence", "excuse-moi", "excusez-moi", "pardon", "wait",
                      "hold on", "excuse me", "shut up", "enough"],
         "window_s": 1.4,  # audio transcrit à chaque vérification
@@ -86,7 +88,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "wake_word": {
         "enabled": False,
-        "words": ["sibo", "sibô", "cibo", "sybo", "siebo", "seebo", "si bo", "ultron", "j-one", "j one", "jone"],
+        "words": ["sibo", "sibô", "cibo", "sybo", "siebo", "seebo", "sebo", "sibeau", "si bo", "ultron", "j-one", "j one", "jone"],
         "session_timeout_s": 30.0,
     },
     "llm": {

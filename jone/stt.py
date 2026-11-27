@@ -70,7 +70,7 @@ class WhisperSTT:
     def __init__(self, model="large-v3-turbo", device="cuda", compute_type="int8_float16",
                  beam_size=1, language=None, languages=("fr", "en"), default_language="fr",
                  language_margin=0.65, detect_model="tiny", cpu_threads=0,
-                 switch_share=0.85, min_switch_s=1.5):
+                 switch_share=0.85, min_switch_s=1.5, prompt=""):
         t0 = time.perf_counter()
         # 0 : tous les cœurs (CTranslate2 n'en prend que 4 par défaut).
         cpu_threads = cpu_threads or os.cpu_count() or 4
@@ -82,6 +82,7 @@ class WhisperSTT:
         self.language_margin = language_margin
         self.switch_share = switch_share
         self.min_switch_s = min_switch_s
+        self.prompt = prompt or None
         self.detector = None
         if not language and len(self.languages) > 1 and detect_model and detect_model != model:
             self.detector = _load_model(detect_model, device, compute_type, cpu_threads)
@@ -101,6 +102,7 @@ class WhisperSTT:
             # douteux : chacun coûte une passe complète (13 à 29 s mesurées sur la
             # Jetson), et le filtre de transcription écarte de toute façon ces cas.
             temperature=0.0,
+            initial_prompt=self.prompt,
             vad_filter=False,  # déjà fait par Silero en amont
             condition_on_previous_text=False,
             without_timestamps=True,
