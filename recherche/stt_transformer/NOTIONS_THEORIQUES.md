@@ -988,3 +988,38 @@ elif gap < 0.2:
 3. **Ce n'est pas mesuré au même moment.** La loss train est une **moyenne sur toute la demi-époque** (≈ 9 500 steps) : elle mélange le modèle du début, moins bon, et celui de la fin. La loss dev est mesurée avec le modèle de la **fin**.
 
 **À retenir :** dev < train est normal quand on utilise de la régularisation (SpecAugment, dropout). C'est même un bon signe : pas de sur-apprentissage. L'alerte serait l'inverse : la loss train qui baisse pendant que la loss dev remonte (référence à 200 époques : train 0,11, dev 2,29 ; voir la section 26).
+
+## 28. RTF (*Real-Time Factor*) et latence : la vitesse d'un modèle STT
+
+**Explication :** le **RTF** est le temps de calcul divisé par la durée de l'audio transcrit.
+- Exemple : une phrase de 6 s transcrite en 0,075 s donne un RTF de 0,075 / 6 ≈ **0,013**.
+- RTF < 1 : le modèle transcrit plus vite qu'on ne parle, il est utilisable en direct.
+- RTF > 1 : il prend du retard, et ce retard s'accumule. Il est inutilisable en direct, quel que soit son WER.
+
+La **latence** est le temps d'attente entre la fin de la phrase et le texte (ici, le temps de calcul d'un clip). Deux modèles peuvent avoir le même RTF et des latences différentes : pour un robot qui dialogue, c'est la latence que l'utilisateur ressent.
+
+**Trois règles pour bien mesurer :**
+1. **Mesurer ce que fera le robot :** un clip à la fois (batch de 1), et sans compter la lecture du mp3, que le robot n'aura pas à faire.
+2. **Utiliser `time.perf_counter()`**, l'horloge la plus précise pour les durées courtes. Sur GPU, il faut en plus appeler `torch.cuda.synchronize()` avant d'arrêter le chronomètre, parce que les calculs GPU sont lancés en arrière-plan et le chronomètre s'arrêterait avant la fin. Sur CPU, ce n'est pas nécessaire.
+3. **Ne pas compter les premiers passages (échauffement) :** le premier appel au modèle prépare la mémoire et il est plus lent.
+
+**Où :** `stt_09_comparaison_ancien_dev_test.ipynb`, cellule 4 (280 clips de l'ancien test, CPU Intel i5-7300U).
+
+**Pourquoi :** on n'avait jamais vérifié que notre modèle est assez rapide pour le robot. Résultat : **RTF 0,014** (environ 70 fois plus rapide que le temps réel) et **latence médiane de 75 ms**. La vitesse n'est donc pas la limite : on peut se permettre un modèle plus gros pour baisser le WER. Le pire cas (479 puis 792 ms selon l'exécution) varie alors que le modèle ne change pas : ce sont des interruptions du système. Il faut donc regarder la **médiane**, pas seulement le maximum.
+
+**Code :**
+```python
+with torch.no_grad():
+    for i, path in enumerate(tables["test"]["audio_path"]):
+        waveform = load_audio(path)                     # lecture du mp3 : PAS chronométrée
+        t0 = time.perf_counter()                        # début du chronomètre
+        features = log_mel(waveform).unsqueeze(0)       # batch de 1, comme sur le robot
+        lengths = torch.tensor([features.shape[1]])
+        log_probs, out_lengths = model(features, lengths)
+        greedy_decode(log_probs, out_lengths)
+        elapsed = time.perf_counter() - t0              # fin du chronomètre
+        if i >= 5:                                      # 5 clips d'échauffement non comptés
+            compute.append(elapsed)
+            durations.append(len(waveform) / TARGET_SR)
+rtf = torch.tensor(compute) / torch.tensor(durations)  # RTF de chaque clip
+```

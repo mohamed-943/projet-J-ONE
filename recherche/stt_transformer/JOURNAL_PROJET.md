@@ -808,3 +808,45 @@ Les **paramètres** sont les 3,6 M de poids du modèle : ils sont **appris** par
 - **CER 14,4 % :** le son reste bien perçu (6 lettres sur 7 justes). Le plus gros des erreurs est toujours l'orthographe, ce qu'un modèle de langue au décodage vise directement.
 
 **Prochaine étape (à décider) :** ancien dev et ancien test (vraie comparaison avec 72,5 % et 70,8 %), RTF et Whisper sur le même test, ou directement une piste d'amélioration (modèle de langue, modèle plus gros, données plus variées).
+
+## 2026-11-27 — Vraie comparaison sur l'ancien dev (70,8 % → 38,3 %) et RTF sur CPU (0,014)
+
+**Pourquoi :** le 70,8 % (petit dataset) et le 37,4 % (grand dataset) n'étaient pas mesurés sur les mêmes clips. Pour affirmer que les données ont fait la différence, il faut **le même examen** : `best.pt` sur l'ancien dev. On mesure aussi, pour la première fois, la **vitesse** du modèle (RTF).
+
+**Où :** `stt_09_comparaison_ancien_dev_test.ipynb`, exécuté **en local, sur le CPU du PC** (Intel i5-7300U, 4 threads). Pas besoin de Kaggle : le petit dataset et `best.pt` sont déjà sur le PC (30 Go de téléchargement évités, 0 h de quota GPU). Les chiffres sont dans `runs/grand_s_specaug/comparaison_ancien_dev_test.json` (hors du repo).
+
+**Décisions :**
+- Ancien dev et ancien test chargés avec `load_split(["data/fr-FR", "data/fr-CA"], ...)`, exactement comme avant : **484 clips** pour le dev, le chiffre attendu, et 285 pour le test.
+- Le **clip de l'ancien test qui est aussi dans le grand train** (EDA, point 7b) est gardé : la liste du grand train n'est pas sur le PC. Effet de quelques dixièmes de point au plus.
+- RTF mesuré **clip par clip, en batch de 1**, comme sur le robot. Le chronomètre (`time.perf_counter()`) couvre log-Mel + modèle + décodage. **La lecture du mp3 n'est pas comptée** : le micro du robot donne directement des échantillons. Les 5 premiers clips servent d'échauffement.
+
+**Résultats : la vraie comparaison**
+
+| Jeu (mêmes clips) | Ancien meilleur modèle (petit dataset, SpecAugment) | **`best.pt` grand dataset** |
+|---|---|---|
+| Ancien dev (484 clips) | 70,8 % (CER 26,1 %) | **38,25 %** (CER 11,53 %, loss 0,416) |
+| Ancien test (285 clips) | jamais mesuré | **44,65 %** (CER 14,52 %, loss 0,528) |
+
+- **70,8 % → 38,25 % sur le même examen :** −32,6 points, soit presque **deux fois moins d'erreurs** (38,25 / 70,8 ≈ 0,54). Même modèle S, même code : seules les données ont changé. Le diagnostic de sous-apprentissage du 2026-11-02 est maintenant **prouvé**.
+- L'écart réel est même un peu plus grand : le 70,8 % avait été **choisi** sur cet ancien dev (légèrement optimiste), alors que le nouveau modèle ne l'a jamais vu.
+- **Estimation avant de lancer :** 37 à 45 %. Résultat : 38,25 %, très proche du dev officiel (37,4 %). L'ancien dev n'était pas un examen « facile ».
+- **Même schéma que sur les jeux officiels :** ancien test 6,4 points au-dessus de l'ancien dev, comme le test officiel par rapport au dev officiel (43,3 % contre 37,4 %). Hypothèse, non vérifiée : le petit dataset est un extrait des découpages officiels, et les voix du test de Common Voice sont plus difficiles.
+
+**Résultats : la vitesse sur CPU (280 clips de l'ancien test)**
+
+| Mesure | Valeur |
+|---|---|
+| RTF global (temps de calcul total ÷ durée totale) | **0,014** |
+| RTF médian | 0,013 |
+| Latence médiane par clip (clips de 6,0 s en médiane) | **75 ms** |
+| Pire cas (2 exécutions) | 479 ms puis 792 ms (RTF 0,10 puis 0,12) |
+
+- **Environ 70 fois plus rapide que le temps réel**, sur un processeur de portable de 2017. 75 ms d'attente après une phrase de 6 s : imperceptible (un humain met environ 200 ms à commencer à répondre).
+- **Le pire cas change d'une exécution à l'autre** (479 puis 792 ms), alors que le WER est identique au centième : c'est une interruption du système (Windows), pas le modèle.
+- **Pourquoi si rapide :** 3,6 M de paramètres (Whisper « small » : 244 M, environ 70 fois plus), et le Transformer ne voit qu'un instant sur 4 grâce au sous-échantillonnage.
+- **Conclusion pour le robot :** la vitesse n'est **pas** un problème, et on a beaucoup de marge pour un modèle plus gros. **La limite actuelle est la précision** (WER test 43,3 %).
+- **Limite :** c'est le CPU du PC, pas celui du robot. À mesurer à nouveau sur la machine du robot, mais avec un facteur 70 de marge, le risque est faible.
+
+**Outillage :** l'outil `kaggle` (ligne de commande) est installé sur le PC. Claude peut désormais envoyer un notebook sur Kaggle, le lancer et récupérer ses résultats sans passer par le navigateur.
+
+**Prochaine étape (à décider) :** Whisper sur le même test officiel (WER et RTF), ou directement une piste d'amélioration : modèle plus gros (la vitesse le permet), modèle de langue au décodage (orthographe), ou travail sur les clips courts.

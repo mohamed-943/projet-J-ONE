@@ -61,6 +61,7 @@ Le modèle de taille « S » a 3,6 M de paramètres : `d_model` 144, 12 blocs, 4
 | 12 | Mesure de vitesse | 0,19 s par step, soit 1,02 h par époque. Le CPU n'est pas un goulot. 1,84 Go de mémoire GPU | `stt_06_mesure_vitesse_grand_dataset.ipynb` |
 | 13 | Entraînement sur le grand dataset (20 époques) | **WER 37,4 %, CER 11,0 %** (dev officiel), sans overfitting. 3 sessions (Colab, puis Kaggle) avec reprise depuis `last.pt` | `stt_07_entrainement_grand_dataset.ipynb`, `figures/courbes_grand_s_specaug_20ep.png` |
 | 14 | Évaluation sur le test officiel | **WER 43,3 %, CER 14,4 %** (15 936 clips), mesurés une seule fois. WER par durée de clip | `stt_08_evaluation_test.ipynb` |
+| 15 | Vraie comparaison et vitesse | Ancien dev (mêmes 484 clips) : **70,8 % → 38,3 %**. Ancien test : 44,7 %. **RTF CPU 0,014**, latence médiane 75 ms | `stt_09_comparaison_ancien_dev_test.ipynb` |
 
 ## Contenu du dossier
 
@@ -83,6 +84,7 @@ Le modèle de taille « S » a 3,6 M de paramètres : `d_model` 144, 12 blocs, 4
 | `stt_07_entrainement_grand_dataset.ipynb` | Entraînement de 20 époques sur le grand dataset, en plusieurs sessions Kaggle avec reprise au milieu d'une époque |
 | `stt_07_entrainement_grand_dataset_colab.ipynb` | La même chose sur Google Colab (sauvegardes dans Google Drive) |
 | `stt_08_evaluation_test.ipynb` | Évaluation unique de `best.pt` sur le test officiel, globale et par durée de clip (aucune phrase affichée) |
+| `stt_09_comparaison_ancien_dev_test.ipynb` | `best.pt` sur l'ancien dev et l'ancien test (comparaison avec le petit dataset) et RTF sur CPU, en local (aucune phrase affichée) |
 | `figures/` | Courbes des entraînements, pour le rapport |
 | `JOURNAL_PROJET.md` | Journal des expériences, des résultats et des décisions |
 | `NOTIONS_THEORIQUES.md` | Notions théoriques, avec le code commenté |
@@ -129,8 +131,8 @@ L'entraînement se fait sur un GPU T4 de Kaggle (30 h par semaine), dans un note
 
 ## Prochaines étapes
 
-1. Ancien dev et ancien test (vraie comparaison avec 72,5 % et 70,8 %), RTF et Whisper sur le même test officiel.
-2. Peut-être, un modèle plus gros.
+1. Whisper sur le même test officiel (WER et RTF). Fait : ancien dev (70,8 % → 38,3 %) et RTF sur CPU (0,014), voir `stt_09`.
+2. Peut-être, un modèle plus gros (la vitesse le permet).
 3. Un modèle de langue au décodage, pour corriger l'orthographe.
 4. L'évaluation finale : WER sur le test (parole lue et spontanée), RTF, et comparaison avec Whisper (`tools/bench_stt.py`).
 5. L'anglais, puis la synthèse vocale (TTS).

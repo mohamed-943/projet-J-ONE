@@ -1,6 +1,6 @@
 # J-ONE — État d'avancement : reconnaissance vocale avec notre propre Transformer
 
-*Dernière mise à jour : 12 novembre 2026 · Branche `stt-transformer-junior` · Dossier [`recherche/stt_transformer/`](../recherche/stt_transformer/)*
+*Dernière mise à jour : 27 novembre 2026 · Branche `stt-transformer-junior` · Dossier [`recherche/stt_transformer/`](../recherche/stt_transformer/)*
 
 Ce document fait le point, en deux pages, sur la partie **reconnaissance vocale (STT) développée de zéro**. Le détail de chaque étape et de chaque décision est dans le [journal du projet](../recherche/stt_transformer/JOURNAL_PROJET.md). La théorie et le code commenté sont dans les [notions théoriques](../recherche/stt_transformer/NOTIONS_THEORIQUES.md).
 
@@ -15,6 +15,8 @@ Ce document fait le point, en deux pages, sur la partie **reconnaissance vocale 
 - **Fait :** l'analyse (EDA) du **grand dataset** (*Scripted Speech 27.0* FR) : **894 h** de train et **10 295 voix**, soit 47 fois plus d'heures que le petit dataset. Les données sont propres, et nos choix précédents restent valables.
 - **Fait :** l'entraînement du même modèle (taille S, avec SpecAugment) sur le **grand dataset** : 20 époques, environ 21 h de GPU en 3 sessions (Colab puis Kaggle). **WER de 37,4 %** et **CER de 11,0 %** sur le dev officiel (16 207 clips), sans overfitting. Le dev n'est pas le même que pour les essais précédents : une comparaison sur les mêmes clips reste à faire.
 - **Fait :** l'évaluation unique sur le **test officiel** (15 936 clips, voix jamais entendues, jamais utilisées pour choisir) : **WER de 43,3 %** et **CER de 14,4 %**. **C'est le chiffre à annoncer pour le modèle actuel.** Il est 6 points plus haut que sur le dev.
+- **Fait :** la **vraie comparaison**, sur les mêmes 484 clips de l'ancien dev : **70,8 % → 38,3 %** de WER, presque deux fois moins d'erreurs, avec le même modèle. Seules les données ont changé.
+- **Fait :** la **vitesse sur CPU** (portable Intel i5 de 2017) : **RTF de 0,014**, soit environ 70 fois plus rapide que le temps réel, et 75 ms d'attente par phrase. La vitesse n'est pas un problème pour le robot : la limite est la précision.
 - **Place dans le robot :** ce modèle est un **travail de recherche**. Le pipeline du robot continue d'utiliser **Whisper** ([`jone/stt.py`](../jone/stt.py)) tant que notre modèle n'atteint pas une qualité comparable. La comparaison sera faite avec les mêmes métriques (WER, RTF).
 
 ## 2. Ce qui est fait
@@ -32,6 +34,7 @@ Ce document fait le point, en deux pages, sur la partie **reconnaissance vocale 
 | EDA du grand dataset | ✅ | Train : 621 982 clips (893,8 h, 10 295 locuteurs). Dev et test : 16 207 clips chacun (environ 26 h), sans locuteur commun avec le train. Vocabulaire de 49 caractères conservé (1,55 % des phrases écartées). 113 clips à retirer (contrainte du CTC) |
 | Entraînement sur le grand dataset | ✅ | 20 époques (382 640 steps), sauvegardes tous les 2 000 steps et reprise au milieu d'une époque. **WER dev 37,4 %, CER dev 11,0 %** |
 | Évaluation sur le test officiel | ✅ | Mesurée une seule fois, sur 15 936 clips : **WER 43,3 %, CER 14,4 %**. WER de 56,5 % sur les clips de moins de 3 s |
+| Comparaison sur l'ancien dev et RTF | ✅ | Mêmes 484 clips : **70,8 % → 38,3 %** de WER. Ancien test : 44,7 %. **RTF CPU 0,014**, latence médiane 75 ms |
 
 ## 3. Résultats
 
@@ -41,13 +44,14 @@ Ce document fait le point, en deux pages, sur la partie **reconnaissance vocale 
 
 | Mesure | Valeur | Lecture |
 |---|---|---|
-| **WER dev officiel** | **37,4 %** (meilleur : 37,38 %, époque 19) | Presque deux fois moins d'erreurs que sur le petit dataset (70,8 %). Dev différent : comparaison à confirmer sur les mêmes clips |
+| **WER dev officiel** | **37,4 %** (meilleur : 37,38 %, époque 19) | Dev différent du petit dataset. **Sur les mêmes clips (ancien dev) : 38,3 % contre 70,8 %**, presque deux fois moins d'erreurs |
 | **CER dev officiel** | **11,0 %** | Le son est bien perçu. Les erreurs restantes sont surtout de l'orthographe |
 | Loss train / dev en fin d'entraînement | 0,73 / 0,41 | Pas d'overfitting : SpecAugment et dropout rendent le train plus difficile que le dev |
 | Durée | 20 époques, environ 21 h de GPU (0,21 s par step sur Kaggle) | 3 sessions, avec reprise depuis `last.pt` |
 | **WER test officiel** | **43,3 %** (15 936 clips) | **Le chiffre à annoncer.** 6 points au-dessus du dev : le modèle trouve ces voix plus difficiles (loss 0,55 contre 0,41) |
 | **CER test officiel** | **14,4 %** | Seulement 3,9 % des phrases sont sans aucune erreur de mot |
 | WER test par durée | < 3 s : 56,5 % · 3-5 s : 43,9 % · 5-7 s : 41,7 % · ≥ 7 s : 44,8 % | Les phrases courtes sont les plus mal reconnues. Or les commandes au robot sont souvent courtes |
+| **RTF sur CPU** (batch de 1) | **0,014** · latence médiane 75 ms (phrases de 6 s) | Environ 70 fois plus rapide que le temps réel, sur un portable de 2017. Beaucoup de marge pour un modèle plus gros |
 
 **Lecture :**
 - Avec le **même modèle**, seules les **données** ont changé : le diagnostic de sous-apprentissage était le bon.
@@ -104,8 +108,8 @@ Chaque décision est justifiée dans le journal. Un tableau de synthèse s'y tro
 
 ## 5. Prochaines étapes
 
-1. **Comparer** sur l'ancien dev et l'ancien test (vraie comparaison avec 72,5 % et 70,8 %), et mesurer le RTF et Whisper sur le même test officiel. *(Test officiel : fait, WER 43,3 %.)*
-2. **Peut-être, un modèle plus gros** (la mémoire GPU le permet largement).
+1. **Whisper sur le même test officiel** (WER et RTF). *(Test officiel : fait, WER 43,3 %. Ancien dev : fait, 70,8 % → 38,3 %. RTF CPU : fait, 0,014.)*
+2. **Peut-être, un modèle plus gros** : la mémoire GPU et la vitesse sur CPU le permettent largement.
 3. **Ensuite :** ajouter un modèle de langue au décodage, pour corriger l'orthographe, et régler le dropout.
 4. **Évaluation finale :**
    - WER sur le **test**, lu et spontané, mesuré une seule fois ;
