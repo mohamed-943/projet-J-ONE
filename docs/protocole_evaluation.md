@@ -80,8 +80,10 @@ Sur le robot, dans `~/projet-J-ONE` avec le venv activé :
 3. **Évaluer** :
 
    ```bash
-   python tools/evaluation.py --corpus corpus/eval_local/personne1 --llm local
+   python tools/evaluation.py --corpus corpus/eval_local/personne1 --llm local --depuis 2026-11-28T10:00
    ```
+
+   `--depuis` limite la latence de bout en bout aux échanges de la séance de l'étape 2 : indiquer l'heure de son début.
 
    Le rapport est écrit dans `docs/evaluation_local-<date>.md`. Le détail par enregistrement est dans `logs/evaluation-<date>.json`.
 

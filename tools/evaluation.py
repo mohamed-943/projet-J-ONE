@@ -2,7 +2,8 @@
 latence, FAR / FRR (docs/protocole_evaluation.md).
 
     python tools/evaluation.py --corpus corpus/eval_local [--protocole tests/protocole_evaluation.tsv]
-                               [--logs "logs/echanges-*.jsonl"] [--llm local] [--out docs/...]
+                               [--logs "logs/echanges-*.jsonl"] [--depuis 2026-11-27T22:15]
+                               [--llm local] [--out docs/...]
 
 Chaque enregistrement passe par le VAD, Whisper, le filtre et le mot d'éveil, avec
 la configuration du robot (config.yaml + config.local.yaml). La latence de bout en
@@ -80,13 +81,16 @@ def evaluate(cfg: dict, items, corpus: Path) -> list[ItemResult]:
     return results
 
 
-def end_to_end(log_paths: list[str], backend: str) -> dict:
+def end_to_end(log_paths: list[str], backend: str, since: str = "") -> dict:
+    """Latence de bout en bout des échanges réussis de `backend`, depuis `since`
+    (début d'horodatage ISO, par exemple 2026-11-27T22:15)."""
     records = []
     for path in log_paths:
         with open(path, encoding="utf-8") as f:
             records += [json.loads(l) for l in f if l.strip()]
     vals = [r["latences_ms"]["bout_en_bout"] for r in records
             if r.get("llm") == backend and r.get("statut") == "ok"
+            and r.get("horodatage", "") >= since
             and r.get("latences_ms", {}).get("bout_en_bout") is not None]
     return summarize(vals)
 
@@ -102,7 +106,8 @@ def ms(v) -> str:
     return "–" if v is None else f"{v:.0f} ms"
 
 
-def report(cfg: dict, metrics: dict, e2e: dict, backend: str, results: list[ItemResult]) -> str:
+def report(cfg: dict, metrics: dict, e2e: dict, backend: str, results: list[ItemResult],
+           since: str = "") -> str:
     s = cfg["stt"]
     moteur = (f"whisper-server, {Path(s['server']['model']).name}" if s.get("backend") == "whisper-server"
               else f"faster-whisper {s['model']} ({s['device']})")
@@ -142,7 +147,8 @@ def report(cfg: dict, metrics: dict, e2e: dict, backend: str, results: list[Item
         f"| Bout en bout, fin de parole → premier son ({backend}) | {e2e['n']} | {ms(e2e['p50'])} | "
         f"{ms(e2e['p90'])} | {ms(e2e['max'])} |",
         "",
-        f"Cible ENF-01 : p90 ≤ {target} ms → {'conforme' if ok else 'non conforme'}." if target else "",
+        f"Bout en bout : échanges du journal{' depuis ' + since if since else ''}. "
+        + (f"Cible ENF-01 : p90 ≤ {target} ms → {'conforme' if ok else 'non conforme'}." if target else ""),
         "",
         "## 4. FAR / FRR — fiabilité de la détection vocale",
         "",
@@ -175,6 +181,7 @@ def main():
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--logs", default="logs/echanges-*.jsonl")
     p.add_argument("--llm", default="local", help="modèle dont on lit la latence de bout en bout")
+    p.add_argument("--depuis", default="", help="ne compter que les échanges à partir de cet horodatage")
     p.add_argument("--out", help="rapport Markdown (défaut : docs/evaluation_<llm>-<date>.md)")
     args = p.parse_args()
 
@@ -182,11 +189,11 @@ def main():
     items = load_protocol(ROOT / args.protocole)
     results = evaluate(cfg, items, Path(args.corpus))
     metrics = compute_metrics(results)
-    e2e = end_to_end(sorted(glob.glob(str(ROOT / args.logs))), args.llm)
+    e2e = end_to_end(sorted(glob.glob(str(ROOT / args.logs))), args.llm, args.depuis)
 
     stamp = f"{datetime.now():%Y%m%d-%H%M}"
     out = Path(args.out) if args.out else ROOT / "docs" / f"evaluation_{args.llm}-{stamp}.md"
-    out.write_text(report(cfg, metrics, e2e, args.llm, results), encoding="utf-8")
+    out.write_text(report(cfg, metrics, e2e, args.llm, results, args.depuis), encoding="utf-8")
     detail = resolve_path(cfg["logging"]["dir"]) / f"evaluation-{stamp}.json"
     detail.parent.mkdir(parents=True, exist_ok=True)
     detail.write_text(json.dumps({
